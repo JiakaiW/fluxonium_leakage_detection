@@ -33,6 +33,8 @@ import qutip as qt
 
 import math
 import scqubits
+
+
 def generate_single_mapping(H_with_interaction_no_drive) -> np.ndarray:
     """
     Returns a dictionary like {(0,0,0):0,(0,0,1):1}
@@ -135,13 +137,13 @@ def drive_strength_for_gaussian_pulse_given_total_time( T = 100,  # total length
     return A
 
 
+
+
 cmap = LinearSegmentedColormap.from_list(
     'custom', 
     [(0, 'black'), (0.333, 'darkred'),(0.666, 'orange'), (1, 'white')], 
     N=256
 )
-
-
 
 '''
 Zhenyiqi_version qfunction
@@ -269,7 +271,6 @@ def plot_t_dep_Husimi_coarse_grid_then_refine(t, tlist, results, qubit_levels, o
         im = axes[initial_state].imshow(np.abs(R_fine), extent=(-2*np.pi, 2*np.pi, -2*np.pi, 2*np.pi), origin='lower', cmap=cmap )
     fig.colorbar(im, cax=cbar_ax)
     plt.show()
-
 
 def make_husimi_widget(tlist,results,qubit_levels,osc_levels,hilbertspace,w_d):
     inter =  interactive(plot_t_dep_Husimi,
@@ -432,8 +433,6 @@ def plot_specturum(qubit,
         else:
             print("dressed_state_index contain None")
     plt.show()
-
-
 
 def plot_population_and_alpha(results,idxs,product_states,tlist,dominant_freq,nlevels = 4):
     dictionary = {0: 'g', 1: 'e', 2: 'f', 3: 'h'}
