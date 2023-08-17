@@ -4,22 +4,15 @@
     "type": "split",
     "children": [
       {
-        "id": "d4fb0131148870a9",
+        "id": "6aa8e7b573fee321",
         "type": "tabs",
         "children": [
           {
-            "id": "0dea1f60d751c51c",
+            "id": "7e4ba8e93564ee13",
             "type": "leaf",
             "state": {
-              "type": "canvas",
-              "state": {
-                "file": "0_fluxonium_erasure.canvas",
-                "viewState": {
-                  "x": 1460.5288869933117,
-                  "y": 151.99305202128534,
-                  "zoom": 0.8585172723481688
-                }
-              }
+              "type": "empty",
+              "state": {}
             }
           }
         ]
@@ -89,7 +82,6 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "0_fluxonium_erasure.canvas",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -106,7 +98,6 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "0_fluxonium_erasure.canvas",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -128,9 +119,7 @@
             "type": "leaf",
             "state": {
               "type": "outline",
-              "state": {
-                "file": "0_fluxonium_erasure.canvas"
-              }
+              "state": {}
             }
           }
         ]
@@ -150,7 +139,7 @@
       "command-palette:Open command palette": false
     }
   },
-  "active": "0dea1f60d751c51c",
+  "active": "7e4ba8e93564ee13",
   "lastOpenFiles": [
     "0_fluxonium_erasure.canvas",
     "Untitled.md",
