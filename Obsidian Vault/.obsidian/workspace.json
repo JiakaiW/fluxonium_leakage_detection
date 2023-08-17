@@ -15,9 +15,9 @@
               "state": {
                 "file": "0_fluxonium_erasure.canvas",
                 "viewState": {
-                  "x": 1449.0380038078658,
-                  "y": -130.86221780689746,
-                  "zoom": 0.820525490641593
+                  "x": 1494.9313816589924,
+                  "y": -128.45300522281133,
+                  "zoom": 0.7995508687818912
                 }
               }
             }
@@ -72,7 +72,8 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300
+    "width": 300,
+    "collapsed": true
   },
   "right": {
     "id": "d952d7e744216e79",
@@ -149,7 +150,7 @@
       "command-palette:Open command palette": false
     }
   },
-  "active": "0dea1f60d751c51c",
+  "active": "35637662d9da57c4",
   "lastOpenFiles": [
     "0_fluxonium_erasure.canvas",
     "Untitled.md",
