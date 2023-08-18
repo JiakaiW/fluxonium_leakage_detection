@@ -11,8 +11,15 @@
             "id": "7e4ba8e93564ee13",
             "type": "leaf",
             "state": {
-              "type": "empty",
-              "state": {}
+              "type": "canvas",
+              "state": {
+                "file": "0_fluxonium_erasure.canvas",
+                "viewState": {
+                  "x": 1443.7676959064324,
+                  "y": 405.79620723684224,
+                  "zoom": 1
+                }
+              }
             }
           }
         ]
@@ -82,6 +89,7 @@
             "state": {
               "type": "backlink",
               "state": {
+                "file": "0_fluxonium_erasure.canvas",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -98,6 +106,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
+                "file": "0_fluxonium_erasure.canvas",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -119,7 +128,9 @@
             "type": "leaf",
             "state": {
               "type": "outline",
-              "state": {}
+              "state": {
+                "file": "0_fluxonium_erasure.canvas"
+              }
             }
           }
         ]
@@ -139,7 +150,7 @@
       "command-palette:Open command palette": false
     }
   },
-  "active": "7e4ba8e93564ee13",
+  "active": "35637662d9da57c4",
   "lastOpenFiles": [
     "0_fluxonium_erasure.canvas",
     "Untitled.md",
