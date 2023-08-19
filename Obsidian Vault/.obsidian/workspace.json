@@ -4,11 +4,11 @@
     "type": "split",
     "children": [
       {
-        "id": "d4fb0131148870a9",
+        "id": "6aa8e7b573fee321",
         "type": "tabs",
         "children": [
           {
-            "id": "0dea1f60d751c51c",
+            "id": "7e4ba8e93564ee13",
             "type": "leaf",
             "state": {
               "type": "canvas",
@@ -150,7 +150,7 @@
       "command-palette:Open command palette": false
     }
   },
-  "active": "0dea1f60d751c51c",
+  "active": "35637662d9da57c4",
   "lastOpenFiles": [
     "0_fluxonium_erasure.canvas",
     "Untitled.md",
