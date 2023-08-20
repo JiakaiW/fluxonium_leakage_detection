@@ -15,9 +15,9 @@
               "state": {
                 "file": "0_fluxonium_erasure.canvas",
                 "viewState": {
-                  "x": 899.5428794019026,
-                  "y": 27.514885379345092,
-                  "zoom": 0.8472647935834482
+                  "x": 824.9238824368155,
+                  "y": 256.92707674547614,
+                  "zoom": -0.37880862775574525
                 }
               }
             }
@@ -150,8 +150,9 @@
       "command-palette:Open command palette": false
     }
   },
-  "active": "35637662d9da57c4",
+  "active": "7e4ba8e93564ee13",
   "lastOpenFiles": [
+    "Pasted image 20230819030818.png",
     "0_fluxonium_erasure.canvas",
     "Untitled.md",
     "Untitled.canvas",
