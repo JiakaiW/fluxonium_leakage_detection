@@ -366,7 +366,7 @@ def plot_population(results,qubit_level,osc_level,product_to_dressed,a,w_d,tlist
     idxs = [product_to_dressed[(s1, s2)] for (s1, s2) in product_states]
     tot_dims = qubit_level*osc_level
 
-    nlevels = qubit_level
+    nlevels = len(results)
 
 
     a_op = jnp.array(a.full())
