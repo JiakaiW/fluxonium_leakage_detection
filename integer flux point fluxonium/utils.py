@@ -5,7 +5,9 @@ import scqubits
 from typing import List
 import math
 from IPython.display import clear_output
-
+from jax import vmap
+import jax.numpy as jnp
+from jax import jit
 
 def generate_single_mapping(H_with_interaction_no_drive) -> np.ndarray:
     """
@@ -290,25 +292,168 @@ def transition_frequency(hilbertspace,s0: int, s1: int) -> float:
     return (hilbertspace.energy_by_dressed_index(s1)- hilbertspace.energy_by_dressed_index(s0))
 
 
-def delegate_to_mesolve(H,state0,tlist,e_ops = None,options = None,c_ops = None):
+def solve_with_mesolve(H,state0,tlist,options = None,c_ops = None):
     return qutip.mesolve(
         H = H,
         rho0=  state0,
         tlist = tlist,
-        e_ops=e_ops,
         options=options,
         progress_bar = True,
         c_ops= c_ops
     )
 
 
-def delegate_to_mcsolve(H,state0,tlist,e_ops = None,options = None,c_ops = None):
-    return qutip.mcsolve(
+def solve_with_mcsolve(H,state0,tlist,options = None,c_ops = None,ntraj= 50):
+    # Also does averaging 
+    result =  qutip.mcsolve(
         H = H,
         psi0 = state0,
         tlist = tlist,
-        e_ops=e_ops,
         options=options,
         progress_bar = True,
-        c_ops= c_ops
+        c_ops= c_ops,
+        ntraj= 20
     )
+    # Averaging over the trajectories
+    num_times = len(result.times)
+    averaged_states = []
+
+    for t in range(num_times):
+        state_t = sum(result.states[traj][t] for traj in range(result.ntraj))
+        state_t = state_t / result.ntraj
+        averaged_states.append(state_t)
+
+    # Replace the original result's states with the averaged states
+    result.states = averaged_states
+    return result
+
+def solve_with_jax_ode_in_chunks(ham_solver, rho0, tot_time, square, num_chunks = 50, num_points_per_chunk = 2):
+    chunk_time = tot_time / num_chunks
+    current_rho = rho0
+    results = []
+
+    for i in range(num_chunks):
+        t_span_chunk = [i * chunk_time, (i + 1) * chunk_time]
+        t_eval_chunk = np.linspace(t_span_chunk[0], t_span_chunk[1], num_points_per_chunk)
+
+        result_chunk = ham_solver.solve(
+            y0=current_rho,
+            t_span=t_span_chunk,
+            signals=square,
+            method='jax_odeint',
+            t_eval=t_eval_chunk,
+            atol=1e-8,
+            rtol=1e-8
+        )
+
+        results.append(result_chunk)
+        current_rho = result_chunk.y[-1]
+
+    final_result = combine_results(results)
+    return final_result
+
+def solve_with_jax_lmde_in_chunks():
+    pass
+
+
+
+
+
+
+
+def plot_population(results,qubit_level,osc_level,product_to_dressed,a,w_d,tlist,fourier=False):
+    product_states = [(ql,ol) for ql in range(qubit_level) for ol in range(osc_level)]
+    idxs = [product_to_dressed[(s1, s2)] for (s1, s2) in product_states]
+    tot_dims = qubit_level*osc_level
+
+    nlevels = qubit_level
+
+
+    a_op = jnp.array(a.full())
+    pn_op = jnp.array((a.dag()*a).full())
+
+
+    def compute_expectation(ket_or_dm, operator):
+        # Check if the input is a ket or a density matrix
+        if ket_or_dm.shape[-1] == 1:  # Input is a ket
+            return (jnp.linalg.multi_dot([jnp.conj(ket_or_dm).T, operator, ket_or_dm]))[0][0]
+        else:  # Input is a density matrix
+            return jnp.trace(jnp.dot(operator, ket_or_dm))
+
+    # Vectorize the function over the kets
+    vectorized_compute_expectation = vmap(compute_expectation, in_axes=(0, None))
+    vectorized_compute_expectation = jit(vectorized_compute_expectation)
+
+    for i in range(nlevels):
+        if hasattr(results[i], 'y'):
+            states = jnp.array(results[i].y)  # assuming y contains JAX arrays or density matrices
+        elif hasattr(results[i], 'states'):
+            states = jnp.stack([jnp.array(q.full()) for q in results[i].states])  # assuming states contains QObj or density matrices
+
+        results[i].expect = []
+        for idx in idxs:
+            dressed_state = jnp.zeros(tot_dims).at[idx].set(1).reshape(-1, 1)
+            dressed_state_op = jnp.outer(dressed_state, jnp.conj(dressed_state).T)
+            expectations = vectorized_compute_expectation(states, dressed_state_op)
+            results[i].expect.append(expectations)
+        alpha_expect = vectorized_compute_expectation(states, a_op)
+        pns_expect = vectorized_compute_expectation(states, pn_op)
+        results[i].expect.append(alpha_expect)
+        results[i].expect.append(pns_expect)
+
+    if fourier == True:
+        first_dominant_freq =find_dominant_frequency(results[0].expect[-2],tlist)
+    else:
+        first_dominant_freq = w_d
+
+
+    fig, axes = plt.subplots(4,nlevels, figsize=(9, 6))
+
+    for i in range(nlevels):
+        qubit_state_population = [np.zeros(shape=len(tlist))]*qubit_level
+        for idx, product_state in enumerate(product_states):
+            ql = product_state[0]
+            qubit_state_population[ql] += results[i].expect[idx]
+        for ql in range(nlevels):
+            axes[0][i].plot(tlist, qubit_state_population[ql], label=r"$\overline{|%s\rangle}$" % (f"{ql}"))
+        
+
+        #*np.exp(-1j * 2 * np.pi * first_dominant_freq * tlist) # *np.exp(-1j * 2 * np.pi * dominant_freq * tlist)  
+
+        alpha = results[i].expect[-2]*np.exp(-1j * 2 * np.pi * first_dominant_freq * tlist)
+
+        # Coherent state eigenval
+        real = alpha.real
+        imag = alpha.imag
+        axes[1][i].plot(tlist,imag , label=r"imag alpha")
+        axes[2][i].plot(tlist, real, label=r"real alpha")
+        axes[3][i].plot(-imag, real, label=r"imag alpha VS real alpha")
+        
+        # Photon number
+        axes[0][i].plot(tlist, results[i].expect[-1], label=r"photon number")
+
+
+    axes[0][nlevels-1].legend(loc='center', ncol=1, bbox_to_anchor=(1.5, 0.5))
+    axes[1][nlevels-1].legend(loc='center', ncol=1, bbox_to_anchor=(1.3, 0.5))
+    axes[2][nlevels-1].legend(loc='center', ncol=1, bbox_to_anchor=(1.3, 0.5))
+    axes[3][nlevels-1].legend(loc='center', ncol=1, bbox_to_anchor=(1.4, 0.5))
+    plt.ylabel("population")
+    plt.xlabel("t (ns)")
+    for row in [0,1,2,3]:
+        max_x_range,min_x_range,max_y_range,min_y_range = 0,0,0,0
+        for col in range(nlevels):
+            ymin, ymax = axes[row][col].get_ylim()
+            xmin, xmax = axes[row][col].get_xlim()
+            if ymax > max_y_range:
+                max_y_range = ymax
+            if ymin < min_y_range:
+                min_y_range = ymin
+            if xmax > max_x_range:
+                max_x_range = xmax
+            if xmin < min_x_range:
+                min_x_range = xmin
+        for col in range(nlevels):
+            axes[row][col].set_ylim(min_y_range, max_y_range)
+            axes[row][col].set_xlim(min_x_range,max_x_range)
+    # plt.yscale('log')
+    plt.show()
