@@ -288,6 +288,12 @@ def transition_frequency(hilbertspace,s0: int, s1: int) -> float:
     return (hilbertspace.energy_by_dressed_index(s1)- hilbertspace.energy_by_dressed_index(s0))
 
 
+
+class CustomOdeResult:
+    def __init__(self, t, y):
+        self.t = t
+        self.y = y
+
 def solve_with_mesolve(H,state0,tlist,options = None,c_ops = None):
     return qutip.mesolve(
         H = H,
@@ -324,34 +330,40 @@ def solve_with_mcsolve(H,state0,tlist,options = None,c_ops = None,ntraj= 50):
     return result
 
 def solve_with_jax_ode_in_chunks(ham_solver, rho0, tot_time, square, num_chunks = 50, num_points_per_chunk = 2):
-    chunk_time = tot_time / num_chunks
-    current_rho = rho0
-    results = []
-
-    for i in range(num_chunks):
-        t_span_chunk = [i * chunk_time, (i + 1) * chunk_time]
-        t_eval_chunk = np.linspace(t_span_chunk[0], t_span_chunk[1], num_points_per_chunk)
-
-        result_chunk = ham_solver.solve(
-            y0=current_rho,
-            t_span=t_span_chunk,
-            signals=square,
-            method='jax_odeint',
-            t_eval=t_eval_chunk,
-            atol=1e-8,
-            rtol=1e-8
-        )
-
-        results.append(result_chunk)
-        current_rho = result_chunk.y[-1]
-
-    final_result = combine_results(results)
-    return final_result
-
-def solve_with_jax_lmde_in_chunks():
     pass
 
 
+def solve_with_jax_gpu(ham_solver, y0, tlist, signals, max_dt=1, chunk_size=10):
+    tlist_chunks = []
+    for i in range(0, len(tlist) - 1, chunk_size - 1):
+        chunk = tlist[i:i + chunk_size]
+        tlist_chunks.append(chunk)
+
+    current_state = y0
+    chunk_results = []
+
+    for i, chunk in enumerate(tlist_chunks):
+        result = ham_solver.solve(
+            y0=current_state,
+            t_span=[chunk[0], chunk[-1]],
+            signals=signals,
+            method='jax_expm_parallel',
+            t_eval=jnp.linspace(chunk[0], chunk[-1], len(chunk)),
+            max_dt=max_dt
+        )
+
+        # Append the result, excluding the overlapping state if not the first chunk
+        if i == 0:
+            chunk_results.extend(result.y)
+        else:
+            chunk_results.extend(result.y[1:])
+
+        current_state = result.y[-1]
+        clear_output(wait=True)
+        print(f"Progress: Chunk {i + 1}/{len(tlist_chunks)} solved.")
+
+    ode_result = CustomOdeResult(t=tlist, y=chunk_results)
+    return ode_result
 
 
 
