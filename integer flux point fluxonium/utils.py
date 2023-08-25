@@ -290,7 +290,7 @@ def transition_frequency(hilbertspace,s0: int, s1: int) -> float:
 
 
 class CustomOdeResult:
-    def __init__(self, t, y):
+    def __init__(self, t = [], y=[]):
         self.t = t
         self.y = y
 
@@ -365,8 +365,47 @@ def solve_with_jax_gpu(ham_solver, y0, tlist, signals, max_dt=1, chunk_size=10):
     ode_result = CustomOdeResult(t=tlist, y=chunk_results)
     return ode_result
 
+def solve_with_jax_gpu_lindbladian(ham_solver, y0, tlist, signals, max_dt=1, chunk_size=10):
+    ham_solver.model.evaluation_mode = "dense_vectorized"
+    if y0.shape[0] != ham_solver.model.dim**2:
+        y0 = y0 @ y0.conj().T
+        y0 = y0.flatten(order='F')
 
+    ode_result = CustomOdeResult()
+    if chunk_size >= 1:
+        ode_result =  solve_with_jax_gpu(ham_solver, y0, tlist, signals, max_dt, chunk_size)
 
+    else:
+        current_state = y0
+        chunk_results = []
+        t_results = []
+        total_time = tlist[-1] - tlist[0]
+        num_intervals = int(len(tlist) / chunk_size)
+        interval_length = total_time / num_intervals
+
+        for i in range(num_intervals):
+            t_start = tlist[0] + i * interval_length
+            t_end = t_start + interval_length
+            t_eval_interval = jnp.array([t_end])
+
+            result = ham_solver.solve(
+                y0=current_state,
+                t_span=[t_start, t_end],
+                signals=signals,
+                method='jax_expm_parallel',
+                t_eval=t_eval_interval,
+                max_dt=max_dt
+            )
+
+            chunk_results.extend(result.y[-1])
+            t_results.extend(t_eval_interval[-1])
+
+            current_state = result.y[-1]
+            clear_output(wait=True)
+            print(f"Progress: Interval {i + 1}/{num_intervals} solved.")
+        ode_result = CustomOdeResult(t=t_results, y=chunk_results)
+    
+    return ode_result
 
 
 def plot_population(results,qubit_level,osc_level,product_to_dressed,a,w_d,tlist,fourier=False):
