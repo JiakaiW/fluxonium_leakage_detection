@@ -181,84 +181,80 @@ def sweep_resonator_frequency_for_ge_gf_gh_detunning(EJ=8.9,
                                         EL=0.5,
                                         flux = 0,
                                         g_strength = 0.3):
-    # for erasure detection, we want g0g1 detunned from e0e1 and f0f1
-    # for measurement, we want one e0e1 detuned from the rest two.
-    E_vals = np.linspace(2, 20, 200)
-    g0g1_vals = []
-    e0e1_vals = []
-    f0f1_vals = []
-    h0h1_vals = []
 
+    E_vals = np.linspace(2, 10, 200)
+    transition_name_to_data = {}
+    def add_transition_to_list(name:str,hilbertspace,product_to_dressed,product_state1,product_state2):
+        freq = dressed_transition_frequency_over_2pi(hilbertspace,product_to_dressed[product_state1],product_to_dressed[product_state2])
+        if type(freq) is not np.float64:
+            freq = None
+        transition_name_to_data.setdefault(name, []).append(freq)
+
+    qubit_levels = 6
     qbt = scqubits.Fluxonium(
             EJ=EJ,
             EC=EC,
             EL=EL,
             flux=flux,
             cutoff=30,
-            truncated_dim=6
+            truncated_dim=qubit_levels
         )
     num_done = 0
     num_tot = len(E_vals)
+    ql_names= ['g','e','f','h','i','j']
     for e in E_vals:
-        osc = scqubits.Oscillator(
-            E_osc=e,
-            truncated_dim=20 # here I only use 20, but later use 50 in mesolve
-        )
+        osc = scqubits.Oscillator(E_osc=e, truncated_dim=20)
         hilbertspace = scqubits.HilbertSpace([qbt, osc])
-        hilbertspace.add_interaction(
-            g_strength=g_strength,
-            op1=qbt.n_operator,
-            op2=osc.creation_operator,
-            add_hc=True
-        )
+        hilbertspace.add_interaction(g_strength=g_strength,op1=qbt.n_operator,op2=osc.creation_operator,add_hc=True)
         hilbertspace.generate_lookup()
         product_to_dressed = generate_single_mapping(hilbertspace.hamiltonian())
 
-        g0g1 = dressed_transition_frequency_over_2pi(hilbertspace,product_to_dressed[(0,0)],product_to_dressed[(0,1)])
-        e0e1 = dressed_transition_frequency_over_2pi(hilbertspace,product_to_dressed[(1,0)],product_to_dressed[(1,1)])
-        f0f1 = dressed_transition_frequency_over_2pi(hilbertspace,product_to_dressed[(2,0)],product_to_dressed[(2,1)])
-        h0h1 = dressed_transition_frequency_over_2pi(hilbertspace,product_to_dressed[(3,0)],product_to_dressed[(3,1)])
+        # Oscillator transition
+        for ql in [0,1,2,3]:
+            add_transition_to_list(name = f"{ql_names[ql]}0{ql_names[ql]}1",
+                                hilbertspace = hilbertspace,
+                                product_to_dressed=product_to_dressed,
+                                product_state1 = (ql,0),
+                                product_state2= (ql,1))
+        # Qubit transition
+        for q1 in range(qubit_levels-1):
+            for q2 in range(q1+1,qubit_levels):
+                if q1 in [0,1,2] or q2 in [0,1,2]: # Only plot qubit transitions that's to or from g/e/f
+                    add_transition_to_list(name = f"{ql_names[q1]}{ql_names[q2]}",
+                                hilbertspace = hilbertspace,
+                                product_to_dressed=product_to_dressed,
+                                product_state1 = (q1,0),
+                                product_state2= (q2,0))
 
-        g0g1_vals.append(g0g1)
-        e0e1_vals.append(e0e1)
-        f0f1_vals.append(f0f1)
-        h0h1_vals.append(h0h1)
-        g0g1_vals = replace_non_float64_with_none(g0g1_vals)
-        e0e1_vals = replace_non_float64_with_none(e0e1_vals)
-        f0f1_vals = replace_non_float64_with_none(f0f1_vals)
-        h0h1_vals = replace_non_float64_with_none(h0h1_vals)
         num_done+=1
         if num_done%10 == 0:
             clear_output()
             print(f"done:{num_done}/{num_tot}")
-    chi_ge_MHz = []
-    for a, b in zip(e0e1_vals, g0g1_vals):
-        if a is None or b is None:
-            chi_ge_MHz.append(None)
-        else:
-            chi_ge_MHz.append((a - b)*1000)
-    chi_gf_MHz = []
-    for a, b in zip(f0f1_vals, g0g1_vals):
-        if a is None or b is None:
-            chi_gf_MHz.append(None)
-        else:
-            chi_gf_MHz.append((a - b)*1000)
-    chi_gh_MHz = []
-    for a, b in zip(h0h1_vals, g0g1_vals):
-        if a is None or b is None:
-            chi_gh_MHz.append(None)
-        else:
-            chi_gh_MHz.append((a - b)*1000)
-    plt.plot(E_vals, chi_ge_MHz, label=r'$\chi_{\mathrm{ge}}$')
-    plt.plot(E_vals, chi_gf_MHz, label=r'$\chi_{\mathrm{gf}}$')
-    plt.plot(E_vals, chi_gh_MHz, label=r'$\chi_{\mathrm{gh}}$')
+
+    # Loop over all transitions in the dictionary
+    for name, freq_list in transition_name_to_data.items():
+        if name == "g0g1":
+            continue
+        
+        detunning = []
+        for a, b in zip(freq_list, transition_name_to_data["g0g1"]):
+            if a is None or b is None:
+                detunning.append(None)
+            else:
+                detunning.append((a - b)*1000)
+        if name in ["e0e1","f0f1","h0h1"]:# Thick line
+            plt.plot(E_vals, detunning, label=r'$\chi_{\mathrm{'+f'{name}'+'-g0g1}}$')
+        else:# Thin line
+            plt.plot(E_vals, detunning, label=r'$\chi_{\mathrm{'+f'{name}'+'-g0g1}}$', linewidth=1, alpha=0.5)
     plt.yscale('symlog')
-    plt.legend()
+    plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
     plt.gca().yaxis.grid(True)
     plt.gca().xaxis.grid(True)
     plt.xlabel("resonator frequency (GHz)")
     plt.ylabel("detunning (MHz)")
+    plt.tight_layout()
     plt.show()
+
 
 # In case alpha oscillates not at drive frequency 
 def find_dominant_frequency(expectation,tlist,dominant_frequency_already_found = None,plot = False):
@@ -312,7 +308,7 @@ def solve_with_mcsolve(H,state0,tlist,options = None,c_ops = None,ntraj= 50):
         options=options,
         progress_bar = True,
         c_ops= c_ops,
-        ntraj= 20
+        ntraj= 50
     )
     # Averaging over the trajectories
     num_times = len(result.times)
