@@ -397,8 +397,8 @@ def solve_with_jax_gpu_lindbladian(ham_solver, y0, tlist, signals, max_dt=1, chu
                 max_dt=max_dt
             )
 
-            chunk_results.extend(result.y[-1])
-            t_results.extend(t_eval_interval[-1])
+            chunk_results.append(result.y[-1])
+            t_results.append(t_eval_interval[-1])
 
             current_state = result.y[-1]
             clear_output(wait=True)
