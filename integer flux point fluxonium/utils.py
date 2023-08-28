@@ -306,7 +306,7 @@ def solve_with_mesolve(H,state0,tlist,options = None,c_ops = None):
 
 
 def solve_with_mcsolve(H,state0,tlist,options = None,c_ops = None,ntraj= 50):
-    # Also does averaging 
+    # Also does averaging so it returns a result in the same form as mesolve
     result =  qutip.mcsolve(
         H = H,
         psi0 = state0,
@@ -328,6 +328,10 @@ def solve_with_mcsolve(H,state0,tlist,options = None,c_ops = None,ntraj= 50):
     # Replace the original result's states with the averaged states
     result.states = averaged_states
     return result
+
+def pack_mcsolve_chunks():
+    # Pack chunks that can be sent to htc_condor
+    pass
 
 def solve_with_jax_ode_in_chunks(ham_solver, rho0, tot_time, square, num_chunks = 50, num_points_per_chunk = 2):
     pass
