@@ -8,7 +8,10 @@ from IPython.display import clear_output
 from jax import vmap
 import jax.numpy as jnp
 from jax import jit
-
+from mcsolve_on_node import packed_mcsolve_problem
+import pickle
+import zipfile
+import os
 def generate_single_mapping(H_with_interaction_no_drive) -> np.ndarray:
     """
     Maps product of bare states to dressed state
@@ -329,9 +332,66 @@ def solve_with_mcsolve(H,state0,tlist,options = None,c_ops = None,ntraj= 50):
     result.states = averaged_states
     return result
 
-def pack_mcsolve_chunks():
+def pack_mcsolve_chunks(H,state0,tlist,c_ops,ntraj = 1000,existing_chunk_num: int = 0):
     # Pack chunks that can be sent to htc_condor
-    pass
+
+    seeds = list(np.random.randint(0, 2**32,
+                        size=ntraj,
+                        dtype=np.uint32))
+    chunk_size = 5
+
+    chunk_id = existing_chunk_num
+    # Pack problems
+    for i in range(0, ntraj, chunk_size):
+        chunk_seeds = seeds[i:i + chunk_size]
+        problem = packed_mcsolve_problem(
+            H=H,
+            state0=state0,
+            tlist=tlist,
+            options=qutip.Options(store_states=True, nsteps=2000, num_cpus=1,seeds=chunk_seeds),
+            c_ops=c_ops,
+            ntraj= len(chunk_seeds)
+        )
+
+        with open(f"{chunk_id}.pkl", "wb") as f:
+            pickle.dump(problem, f)
+        chunk_id += 1
+    existing_chunk_num = chunk_id
+    return existing_chunk_num
+
+
+def pack_pkl_files_to_zip(zip_filename="mcsolve_input.zip"):
+    # Create a new ZIP file
+    with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        # Loop through all files in the current directory
+        for filename in os.listdir('.'):
+            # Check if the file is a .pkl file with an integer name
+            name, ext = os.path.splitext(filename)
+            if ext == '.pkl' and name.isdigit():
+                # Add the file to the ZIP
+                zipf.write(filename)
+                # Delete the .pkl file
+                os.remove(filename)
+
+
+
+def aggregate_results(num_chunks):
+    aggregated_states = []
+    aggregated_seeds = []
+
+    for idx in range(num_chunks):
+        with open(f"result_{idx}.pkl", "rb") as f:
+            chunk_result = pickle.load(f)
+        aggregated_states.extend(chunk_result.states)
+        aggregated_seeds.extend(chunk_result.seeds)
+
+    aggregated_result = qutip.solver.Result()
+    aggregated_result.states = aggregated_states
+    aggregated_result.seeds = aggregated_seeds
+
+    return aggregated_result
+
+
 
 def solve_with_jax_ode_in_chunks(ham_solver, rho0, tot_time, square, num_chunks = 50, num_points_per_chunk = 2):
     pass
@@ -508,3 +568,4 @@ def plot_population(results,qubit_level,osc_level,product_to_dressed,a,w_d,tlist
             axes[row][col].set_xlim(min_x_range,max_x_range)
     # plt.yscale('log')
     plt.show()
+
