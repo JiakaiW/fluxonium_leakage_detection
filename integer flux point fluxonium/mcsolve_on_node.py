@@ -2,9 +2,6 @@ import qutip
 import pickle
 
 
-def square_cos(t,*args):
-    cos = np.cos(w_d * 2*np.pi * t)
-    return  2*np.pi *0.002 * cos
 
 class packed_mcsolve_problem:
     def __init__(self, H, state0, tlist, options, c_ops,ntraj):
