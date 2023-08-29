@@ -338,7 +338,7 @@ def pack_mcsolve_chunks(H,state0,tlist,c_ops,ntraj = 1000,existing_chunk_num: in
     seeds = list(np.random.randint(0, 2**32,
                         size=ntraj,
                         dtype=np.uint32))
-    chunk_size = 5
+    chunk_size = 1
 
     chunk_id = existing_chunk_num
     # Pack problems
