@@ -12,6 +12,12 @@ from mcsolve_on_node import packed_mcsolve_problem
 import pickle
 import zipfile
 import os
+import numpy as np
+import matplotlib.pyplot as plt
+from qutip import Qobj, expect, basis, ket2dm
+import ipywidgets as widgets
+from IPython.display import display
+
 def generate_single_mapping(H_with_interaction_no_drive) -> np.ndarray:
     """
     Maps product of bare states to dressed state
@@ -20,7 +26,7 @@ def generate_single_mapping(H_with_interaction_no_drive) -> np.ndarray:
     """
     evals, evecs = H_with_interaction_no_drive.eigenstates()
     overlap_matrix = scqubits.utils.spectrum_utils.convert_evecs_to_ndarray(evecs)
-    OVERLAP_THRESHOLD = 0.01
+    OVERLAP_THRESHOLD = 0.02
     product_state_names = []
     dims = H_with_interaction_no_drive.dims[0]
     system_size = len(dims)
@@ -41,10 +47,9 @@ def generate_single_mapping(H_with_interaction_no_drive) -> np.ndarray:
     for dressed_index in range(len(evals)):
         max_position = (np.abs(overlap_matrix[dressed_index, :])).argmax()
         max_overlap = np.abs(overlap_matrix[dressed_index, max_position])
-        if (max_overlap**2 > OVERLAP_THRESHOLD):
-            overlap_matrix[:, max_position] = 0
-            dressed_indices[int(max_position)] = dressed_index
-        else:
+        overlap_matrix[:, max_position] = 0
+        dressed_indices[int(max_position)] = dressed_index
+        if (max_overlap**2 < OVERLAP_THRESHOLD):
             print(f'max overlap^2 {max_overlap**2} below threshold for dressed state {dressed_index} with eval {evals[dressed_index]}')
     product_to_dressed = {}
     for product, dressed in zip(product_state_names,dressed_indices):
@@ -372,8 +377,59 @@ def pack_pkl_files_to_zip(zip_filename="mcsolve_input.zip"):
                 os.remove(filename)
 
 
+def merge_results(zip_files):
+    # Merging over mcsolve chunks on condor
+    num_total_states = 0  # Total number of trajectories (states) read so far
+    averaged_states_array = None  # Averaged states in NumPy array format
+    tlist = None  # Time list, assumed to be the same for all results
+
+    num_files_tot = len(zip_files)
+    num_files_done = 0
+    for zip_file in zip_files:
+        # Unzip and load the result using gzip
+        with gzip.GzipFile(zip_file, "rb") as f:
+            result = pickle.load(f)
+
+        # Initialize tlist and averaged_states_array if this is the first file
+        if tlist is None:
+            tlist = result.times
+            averaged_states_array = np.array([state.full() for state in result.states])
+
+        # Number of new states in the current result
+        num_new_states = len(result.seeds)
+
+        # Calculate the new total number of states
+        num_new_total_states = num_total_states + num_new_states
+
+        # Convert new states to a NumPy array
+        new_states_array = np.array([state.full() for state in result.states])
+
+        # In-place update of the averaged states
+        averaged_states_array *= (num_total_states / num_new_total_states)
+        np.add(averaged_states_array, (num_new_states / num_new_total_states) * new_states_array, out=averaged_states_array)
+
+        # Update the total number of states
+        num_total_states = num_new_total_states
+
+        num_files_done += 1
+        clear_output()
+        print(f"done:{num_files_done}/{num_files_tot}")
+    print(averaged_states_array.shape)
+    # Convert the final averaged states back to Qobj
+    averaged_states = [qutip.Qobj(state) for state in averaged_states_array]
+
+    # Create a new result object to store the final averaged states
+    final_result = qutip.solver.Result()
+    final_result.states = averaged_states
+    final_result.times = tlist
+
+    return final_result
+
+
+
 
 def aggregate_results(num_chunks):
+    # Used for time chunks in GPU solver
     aggregated_states = []
     aggregated_seeds = []
 
@@ -468,6 +524,59 @@ def solve_with_jax_gpu_lindbladian(ham_solver, y0, tlist, signals, max_dt=1, chu
         ode_result = CustomOdeResult(t=t_results, y=chunk_results)
     
     return ode_result
+
+
+
+def print_heatmap(index ):
+    psi = results[0].states[index]
+    # # Initialize the heatmap matrix
+    n_qubit_states = 8  # Replace with the number of qubit states
+    n_resonator_states = 50  # Replace with the number of resonator states
+    heatmap = np.zeros((n_qubit_states, n_resonator_states))
+
+    # # Define your operator for the dressed state
+    # # operator_dressed = ...
+
+    # Loop over product states
+    for i in range(n_qubit_states):
+        for j in range(n_resonator_states):
+            # Convert to dressed index using the dictionary
+            dressed_index = product_to_dressed.get((i, j), None)
+            if dressed_index is not None:
+                dressed_ket = qutip.basis(400,dressed_index)
+                dressed_operator = qutip.ket2dm(dressed_ket)
+                
+                # Calculate the expectation value
+                exp_val = expect(dressed_operator, psi)
+                
+                # Update the heatmap
+                heatmap[i, j] = exp_val
+    
+    # Plot the heatmap
+    plt.imshow(heatmap, cmap='hot', interpolation='nearest')
+    plt.colorbar(label='Expectation Value')
+    plt.xlabel('Resonator State')
+    plt.ylabel('Qubit State')
+    plt.show()
+
+    print(sum([heatmap[i,j] for i in range(8) for j in range(50)]))
+
+
+def do_product_state_heatmap():
+    # Create a slider widget for index
+    index_slider = widgets.IntSlider(
+        value=0,
+        min=0,
+        max=399,
+        step=1,
+        description='Index:',
+        continuous_update=False
+    )
+
+    # Display the widget and link it to the function
+    widgets.interactive(print_heatmap, index=index_slider)
+
+
 
 
 def plot_population(results,qubit_level,osc_level,product_to_dressed,a,w_d,tlist,fourier=False):
@@ -566,7 +675,6 @@ def plot_population(results,qubit_level,osc_level,product_to_dressed,a,w_d,tlist
             axes[row][col].set_xlim(min_x_range,max_x_range)
     # plt.yscale('log')
     plt.show()
-
 
 
 

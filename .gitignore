@@ -3,3 +3,6 @@ _pycache_/
 *.pkl
 *pycache*
 *.zip
+*mcsolve_result*
+*mcsolve_input*
+mcsolve_result*/

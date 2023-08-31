@@ -37,14 +37,20 @@ class packed_mcsolve_problem:
         # Convert the list of Qobj states to a NumPy array for efficient averaging
         states_array = np.array([[state.full() for state in traj] for traj in result.states])
 
-        # Average over the trajectories (axis 0 is the trajectory axis)
-        averaged_states_array = np.mean(states_array, axis=0)
+        # Reshape the array for easier manipulation
+        states_array = states_array.reshape(len(self.chunk_seeds), len(self.tlist), -1)
 
-        # Convert the averaged states back to Qobj
-        averaged_states = [qutip.Qobj(state) for state in averaged_states_array]
+        # Convert kets to density matrices and sum them up
+        summed_dm_array = np.einsum('ijk,ijl->ijkl', states_array.conj(), states_array)
 
-        # Replace the states in the result object with the averaged states
-        result.states = averaged_states
+        # Average over the trajectories
+        averaged_dm_array = np.mean(summed_dm_array, axis=0)
+
+        # Convert the averaged density matrices back to Qobj
+        averaged_dms = [qutip.Qobj(dm) for dm in averaged_dm_array]
+
+        # Replace the states in the result object with the averaged density matrices
+        result.states = averaged_dms
 
 
         return result
@@ -57,9 +63,6 @@ def main(idx):
     # Run mcsolve
     result = problem.run_mcsolve()
 
-    # This is essentially keeping only one out of four timeslices to reduce size
-    result.states = result.states[::4]
-    result.times = result.times[::4]
 
     with gzip.GzipFile(fileobj=sys.stdout.buffer, mode='wb') as f_out:
         pickle.dump(result, f_out)
