@@ -332,13 +332,12 @@ def solve_with_mcsolve(H,state0,tlist,options = None,c_ops = None,ntraj= 50):
     result.states = averaged_states
     return result
 
-def pack_mcsolve_chunks(H,state0,tlist,c_ops,ntraj = 1000,existing_chunk_num: int = 0):
+def pack_mcsolve_chunks(H,state0,tlist,c_ops,ntraj = 1000,existing_chunk_num: int = 0,chunk_size = 4):
     # Pack chunks that can be sent to htc_condor
 
     seeds = list(np.random.randint(0, 2**32,
                         size=ntraj,
                         dtype=np.uint32))
-    chunk_size = 1
 
     chunk_id = existing_chunk_num
     # Pack problems
@@ -348,9 +347,8 @@ def pack_mcsolve_chunks(H,state0,tlist,c_ops,ntraj = 1000,existing_chunk_num: in
             H=H,
             state0=state0,
             tlist=tlist,
-            options=qutip.Options(store_states=True, nsteps=2000, num_cpus=1,seeds=chunk_seeds),
-            c_ops=c_ops,
-            ntraj= len(chunk_seeds)
+            chunk_seeds=chunk_seeds,
+            c_ops=c_ops
         )
 
         with open(f"{chunk_id}.pkl", "wb") as f:
@@ -569,3 +567,38 @@ def plot_population(results,qubit_level,osc_level,product_to_dressed,a,w_d,tlist
     # plt.yscale('log')
     plt.show()
 
+
+
+
+
+states_k = {}
+states_k[1] = [[a, b] for a in range(2) for b in range(2)]+[['x','x']]
+
+def xiaoyu_dm_infidelity(CZk):
+    num_qubits = CZk+1
+    results = []
+    for init_state in states_k[CZk]:
+        result = qload(''.join([str(item) for item in init_state]))
+        results.append(result)
+
+    final_dms = []
+    for result in results:
+        dm = np.array(result).reshape((4,)*num_qubits*2)
+        dm = dm[(slice(2),)*num_qubits*2].reshape((2**num_qubits,2**num_qubits))
+        dm = Qobj(dm,dims=[[2]*num_qubits,[2]*num_qubits]).unit() # normalize
+        final_dms.append(dm)
+
+    fid=0
+    fid_m=1
+    fid_tmp=0
+    for i in range(2**num_qubits+1):
+        state=init_arr_k[CZk][i]
+        state = U0[CZk]*state
+        fid_tmp = fidelity(final_dms[i],state)
+        fid=fid+fid_tmp/(2**num_qubits+1.0)
+        fid_m=fid_m*fid_tmp
+    fid_m=fid_m/fid_tmp
+    lambda1=1-(1-fid_m)/(1-fid_tmp*fid_m)
+    fg=1/(2**num_qubits+1.0)+2**num_qubits/(2**num_qubits+1.0)*fid_m*fid_tmp
+    f_final=lambda1*fg+fid*(1-lambda1)
+    return 1-f_final
