@@ -377,55 +377,6 @@ def pack_pkl_files_to_zip(zip_filename="mcsolve_input.zip"):
                 os.remove(filename)
 
 
-def merge_results(zip_files):
-    # Merging over mcsolve chunks on condor
-    num_total_states = 0  # Total number of trajectories (states) read so far
-    averaged_states_array = None  # Averaged states in NumPy array format
-    tlist = None  # Time list, assumed to be the same for all results
-
-    num_files_tot = len(zip_files)
-    num_files_done = 0
-    for zip_file in zip_files:
-        # Unzip and load the result using gzip
-        with gzip.GzipFile(zip_file, "rb") as f:
-            result = pickle.load(f)
-
-        # Initialize tlist and averaged_states_array if this is the first file
-        if tlist is None:
-            tlist = result.times
-            averaged_states_array = np.array([state.full() for state in result.states])
-
-        # Number of new states in the current result
-        num_new_states = len(result.seeds)
-
-        # Calculate the new total number of states
-        num_new_total_states = num_total_states + num_new_states
-
-        # Convert new states to a NumPy array
-        new_states_array = np.array([state.full() for state in result.states])
-
-        # In-place update of the averaged states
-        averaged_states_array *= (num_total_states / num_new_total_states)
-        np.add(averaged_states_array, (num_new_states / num_new_total_states) * new_states_array, out=averaged_states_array)
-
-        # Update the total number of states
-        num_total_states = num_new_total_states
-
-        num_files_done += 1
-        clear_output()
-        print(f"done:{num_files_done}/{num_files_tot}")
-    print(averaged_states_array.shape)
-    # Convert the final averaged states back to Qobj
-    averaged_states = [qutip.Qobj(state) for state in averaged_states_array]
-
-    # Create a new result object to store the final averaged states
-    final_result = qutip.solver.Result()
-    final_result.states = averaged_states
-    final_result.times = tlist
-
-    return final_result
-
-
 
 
 def aggregate_results(num_chunks):

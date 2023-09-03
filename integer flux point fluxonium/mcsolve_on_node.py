@@ -31,28 +31,6 @@ class packed_mcsolve_problem:
             progress_bar=False
         )
 
-        # Add an attribute to store the number of trajectories before averaging
-        result.num_trajectories_before_averaging = len(self.chunk_seeds)
-
-        # Convert the list of Qobj states to a NumPy array for efficient averaging
-        states_array = np.array([[state.full() for state in traj] for traj in result.states])
-
-        # Reshape the array for easier manipulation
-        states_array = states_array.reshape(len(self.chunk_seeds), len(self.tlist), -1)
-
-        # Convert kets to density matrices and sum them up
-        summed_dm_array = np.einsum('ijk,ijl->ijkl', states_array.conj(), states_array)
-
-        # Average over the trajectories
-        averaged_dm_array = np.mean(summed_dm_array, axis=0)
-
-        # Convert the averaged density matrices back to Qobj
-        averaged_dms = [qutip.Qobj(dm) for dm in averaged_dm_array]
-
-        # Replace the states in the result object with the averaged density matrices
-        result.states = averaged_dms
-
-
         return result
 
 def main(idx):
