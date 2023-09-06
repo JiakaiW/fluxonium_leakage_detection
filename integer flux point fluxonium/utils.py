@@ -17,6 +17,14 @@ import matplotlib.pyplot as plt
 from qutip import Qobj, expect, basis, ket2dm
 import ipywidgets as widgets
 from IPython.display import display
+import numpy as np
+import matplotlib.pyplot as plt
+import ipywidgets as widgets
+import gzip
+import pickle
+import qutip
+import numpy as np
+from IPython.display import clear_output
 
 def generate_single_mapping(H_with_interaction_no_drive) -> np.ndarray:
     """
@@ -377,6 +385,46 @@ def pack_pkl_files_to_zip(zip_filename="mcsolve_input.zip"):
                 os.remove(filename)
 
 
+def merge_results(zip_files):
+    # Used to merge mcsolve results on HTC condor
+    num_total_states = 0
+    averaged_dm_array = None
+    tlist = None
+
+    num_files_tot = len(zip_files)
+    num_files_done = 0
+
+    for zip_file in zip_files:
+        with gzip.GzipFile(zip_file, "rb") as f:
+            result = pickle.load(f)
+
+        if tlist is None:
+            tlist = result.times
+
+        num_new_states = len(result.seeds)
+        num_total_states += num_new_states
+
+        # Convert states to density matrices and sum them up
+        states_array = np.array([[state.full() for state in traj] for traj in result.states])
+        summed_dm_array = np.einsum('ntcl,ntij->tci', states_array.conj(), states_array) 
+        if averaged_dm_array is None:
+            averaged_dm_array = summed_dm_array
+        else:
+            averaged_dm_array += summed_dm_array
+
+        num_files_done += 1
+        clear_output()
+        print(f"done:{num_files_done}/{num_files_tot}")
+    averaged_dm_array /= num_total_states
+    
+    # Convert the final averaged density matrices back to Qobj
+    averaged_dms = [qutip.Qobj(dm) for dm in averaged_dm_array]
+
+    final_result = qutip.solver.Result()
+    final_result.states = averaged_dms
+    final_result.times = tlist
+
+    return final_result
 
 
 def aggregate_results(num_chunks):
@@ -627,6 +675,40 @@ def plot_population(results,qubit_level,osc_level,product_to_dressed,a,w_d,tlist
     # plt.yscale('log')
     plt.show()
 
+
+
+def plot_heatmap(result, time_index, product_to_dressed, qubit_levels, oscillator_levels):
+    dm = result.states[time_index]
+    grid = np.zeros((qubit_levels, oscillator_levels))
+
+    for qubit_level in range(qubit_levels):
+        for oscillator_level in range(oscillator_levels):
+            product_state = (qubit_level, oscillator_level)
+            dressed_state = product_to_dressed[product_state]
+            # Create a basis state corresponding to the dressed state
+            basis_state = qutip.basis(dm.dims[0][0], dressed_state)
+            # Calculate the expectation value
+            expectation_value = qutip.expect(basis_state * basis_state.dag(), dm)
+            grid[qubit_level, oscillator_level] = expectation_value
+
+    plt.imshow(grid, cmap='viridis', origin='lower')
+    plt.colorbar(label='Expectation Value')
+    plt.xlabel('Oscillator Level')
+    plt.ylabel('Qubit Level')
+    plt.title(f'Expectation Values at t = {result.times[time_index]}')
+    plt.show()
+def interactive_heatmap(result, product_to_dressed, qubit_levels, oscillator_levels):
+    time_slider = widgets.IntSlider(
+        value=0,
+        min=0,
+        max=len(result.times) - 1,
+        step=1,
+        description='Time Index:',
+        continuous_update=False
+    )
+    
+    widgets.interact(lambda time_index: plot_heatmap(result, time_index, product_to_dressed, qubit_levels, oscillator_levels),
+                     time_index=time_slider)
 
 
 
