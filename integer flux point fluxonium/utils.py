@@ -577,6 +577,17 @@ def do_product_state_heatmap():
 
 
 
+def compute_expectation(ket_or_dm, operator):
+    # Check if the input is a ket or a density matrix
+    if ket_or_dm.shape[-1] == 1:  # Input is a ket
+        return (jnp.linalg.multi_dot([jnp.conj(ket_or_dm).T, operator, ket_or_dm]))[0][0]
+    else:  # Input is a density matrix
+        return jnp.trace(jnp.dot(operator, ket_or_dm))
+        
+def get_vectorized_compute_expectation_function():
+    # Vectorize the function over the kets
+    vmapped_function = vmap(compute_expectation, in_axes=(0, None))
+    return  jit(vmapped_function)
 
 def plot_population(results,qubit_level,osc_level,product_to_dressed,a,w_d,tlist,fourier=False):
     product_states = [(ql,ol) for ql in range(qubit_level) for ol in range(osc_level)]
@@ -589,15 +600,7 @@ def plot_population(results,qubit_level,osc_level,product_to_dressed,a,w_d,tlist
     a_op = jnp.array(a.full())
     pn_op = jnp.array((a.dag()*a).full())
 
-
-    def compute_expectation(ket_or_dm, operator):
-        # Check if the input is a ket or a density matrix
-        if ket_or_dm.shape[-1] == 1:  # Input is a ket
-            return (jnp.linalg.multi_dot([jnp.conj(ket_or_dm).T, operator, ket_or_dm]))[0][0]
-        else:  # Input is a density matrix
-            return jnp.trace(jnp.dot(operator, ket_or_dm))
-
-    # Vectorize the function over the kets
+    # Vectorize the function compute_expectation over the kets
     vectorized_compute_expectation = vmap(compute_expectation, in_axes=(0, None))
     vectorized_compute_expectation = jit(vectorized_compute_expectation)
 
