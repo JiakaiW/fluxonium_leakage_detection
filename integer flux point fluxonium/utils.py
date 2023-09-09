@@ -406,7 +406,7 @@ def merge_results(zip_files):
 
         # Convert states to density matrices and sum them up
         states_array = np.array([[state.full() for state in traj] for traj in result.states])
-        summed_dm_array = np.einsum('ntcl,ntij->tci', states_array.conj(), states_array) 
+        summed_dm_array = np.einsum('ntrc,ntij->tri', states_array, states_array.conj()) 
         if averaged_dm_array is None:
             averaged_dm_array = summed_dm_array
         else:
@@ -714,35 +714,32 @@ def interactive_heatmap(result, product_to_dressed, qubit_levels, oscillator_lev
                      time_index=time_slider)
 
 
+def dressed_to_2_level_dm(dressed_dm,product_to_dressed, qubit_level, osc_level,computational_0,computational_1):
+    dressed_dm_data = dressed_dm.full()
+    rho_product = np.zeros((qubit_level * osc_level, qubit_level * osc_level), dtype=complex)
+    for (ql, ol), dressed_level in product_to_dressed.items():
+        index1 = ql * osc_level + ol
+        # Loop again to populate the density matrix
+        for (ql2, ol2), dressed_level2 in product_to_dressed.items():
+            index2 = ql2 * osc_level + ol2
 
-states_k = {}
-states_k[1] = [[a, b] for a in range(2) for b in range(2)]+[['x','x']]
+            # TODO  the order of product_state and product_state2 is probably wrong
+            element = dressed_dm_data[dressed_level, dressed_level2]
+            rho_product[index1, index2] += element
+    rho_product = qutip.Qobj(rho_product, dims=[[qubit_level, osc_level], [qubit_level, osc_level]])
+    qubit_rho = rho_product.ptrace(0)
 
-def xiaoyu_dm_infidelity(CZk):
-    num_qubits = CZk+1
-    results = []
-    for init_state in states_k[CZk]:
-        result = qload(''.join([str(item) for item in init_state]))
-        results.append(result)
+    rho_2_level = qutip.Qobj(np.array([
+            [qubit_rho[computational_0, computational_0],qubit_rho[computational_0, computational_1]],
+            [qubit_rho[computational_1, computational_0],qubit_rho[computational_1, computational_1]]
+        ]),dims=[[2],[2]])
 
-    final_dms = []
-    for result in results:
-        dm = np.array(result).reshape((4,)*num_qubits*2)
-        dm = dm[(slice(2),)*num_qubits*2].reshape((2**num_qubits,2**num_qubits))
-        dm = Qobj(dm,dims=[[2]*num_qubits,[2]*num_qubits]).unit() # normalize
-        final_dms.append(dm)
-
-    fid=0
-    fid_m=1
-    fid_tmp=0
-    for i in range(2**num_qubits+1):
-        state=init_arr_k[CZk][i]
-        state = U0[CZk]*state
-        fid_tmp = fidelity(final_dms[i],state)
-        fid=fid+fid_tmp/(2**num_qubits+1.0)
-        fid_m=fid_m*fid_tmp
-    fid_m=fid_m/fid_tmp
-    lambda1=1-(1-fid_m)/(1-fid_tmp*fid_m)
-    fg=1/(2**num_qubits+1.0)+2**num_qubits/(2**num_qubits+1.0)*fid_m*fid_tmp
-    f_final=lambda1*fg+fid*(1-lambda1)
-    return 1-f_final
+    return rho_2_level
+    
+def compute_and_store_2_level_dm(args):
+    results,file_name, i, j, product_to_dressed, qubit_level, osc_level,computational_0, computational_1 = args
+    
+    rho_2_level = dressed_to_2_level_dm(results[i].states[j], product_to_dressed, qubit_level, osc_level, computational_0, computational_1)
+    
+    with open(file_name, 'wb') as f:
+        pickle.dump(rho_2_level, f)
