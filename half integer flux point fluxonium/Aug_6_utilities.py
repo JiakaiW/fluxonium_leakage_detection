@@ -478,3 +478,6 @@ def plot_population_and_alpha(results,idxs,product_states,tlist,dominant_freq,nl
             axes[row][col].set_xlim(min_x_range,max_x_range)
     # plt.yscale('log')
     plt.show()
+
+
+    

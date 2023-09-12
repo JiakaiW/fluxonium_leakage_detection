@@ -78,13 +78,13 @@ def plot_specturum(qubit, resonator, hilbertspace, max_qubit_level = 4,max_reson
     fig.set_size_inches(4, 4)
     for ql in range(0,max_qubit_level):
         for rl in range(0,max_resonator_level):
-            original = (qubit_ori_energies[ql] + resonator_ori_energies[rl])* 2 * np.pi
+            original = (qubit_ori_energies[ql] + resonator_ori_energies[rl])#* 2 * np.pi
             x1,x2 = ql-0.25,ql+0.25
             ax.plot([x1, x2], [original, original], linewidth=1, color='red')
             ax.text(ql, original, f"{original:.3f}", fontsize=energy_text_size, ha='center', va='bottom')
 
             dressed_state_index = product_to_dressed[(ql,rl)]
-            dressed = hilbertspace.energy_by_dressed_index(dressed_state_index)* 2 * np.pi
+            dressed = hilbertspace.energy_by_dressed_index(dressed_state_index)#* 2 * np.pi
             ax.plot([x1, x2], [dressed, dressed], linewidth=1, color='green')
             ax.text(ql, dressed, f"{dressed:.3f}", fontsize=energy_text_size, ha='center', va='top')
 
@@ -93,8 +93,8 @@ def plot_specturum(qubit, resonator, hilbertspace, max_qubit_level = 4,max_reson
         dressed_index1 = product_to_dressed[(state1[0],state1[1])]
         dressed_index2 = product_to_dressed[(state2[0],state2[1])]
         if dressed_index1!= None and dressed_index2!= None:
-            energy1 = hilbertspace.energy_by_dressed_index(dressed_index1)* 2 * np.pi
-            energy2 = hilbertspace.energy_by_dressed_index(dressed_index2)* 2 * np.pi
+            energy1 = hilbertspace.energy_by_dressed_index(dressed_index1)#* 2 * np.pi
+            energy2 = hilbertspace.energy_by_dressed_index(dressed_index2)#* 2 * np.pi
             ax.plot([state1[0], state2[0]], [energy1, energy2], linewidth=1, color='green')
             ax.text((state1[0]+ state2[0])/2, (energy1+ energy2)/2, f"{energy2-energy1:.3f}", fontsize=energy_text_size, ha='center', va='top')
         else:
@@ -196,12 +196,14 @@ def sweep_resonator_frequency_for_ge_gf_gh_detunning(EJ=8.9,
                                         EC=2.5,
                                         EL=0.5,
                                         flux = 0,
-                                        g_strength = 0.3):
+                                        g_strength = 0.3,
+                                        osc_w_min = 2,
+                                        osc_w_max = 10):
 
-    E_vals = np.linspace(2, 10, 200)
+    E_vals = np.linspace(osc_w_min, osc_w_max, 200)
     transition_name_to_data = {}
     def add_transition_to_list(name:str,hilbertspace,product_to_dressed,product_state1,product_state2):
-        freq = dressed_transition_frequency_over_2pi(hilbertspace,product_to_dressed[product_state1],product_to_dressed[product_state2])
+        freq = abs(dressed_transition_frequency_over_2pi(hilbertspace,product_to_dressed[product_state1],product_to_dressed[product_state2]))
         if type(freq) is not np.float64:
             freq = None
         transition_name_to_data.setdefault(name, []).append(freq)
@@ -322,7 +324,7 @@ def solve_with_mesolve(H,state0,tlist,options = None,c_ops = None):
 
 
 def solve_with_mcsolve(H,state0,tlist,options = None,c_ops = None,ntraj= 50):
-    # Also does averaging so it returns a result in the same form as mesolve
+    # Also does averaging so it returns a result in the same form as mesolve with c_ops
     result =  qutip.mcsolve(
         H = H,
         psi0 = state0,
@@ -332,17 +334,15 @@ def solve_with_mcsolve(H,state0,tlist,options = None,c_ops = None,ntraj= 50):
         c_ops= c_ops,
         ntraj= 50
     )
-    # Averaging over the trajectories
-    num_times = len(result.times)
-    averaged_states = []
+    # Convert states to density matrices and sum them up
+    states_array = np.array([[state.full() for state in traj] for traj in result.states])
+    summed_dm_array = np.einsum('ntrc,ntij->tri', states_array, states_array.conj()) 
+    summed_dm_array /= result.ntraj
+    
+    # Convert the final averaged density matrices back to Qobj
+    averaged_dms = [qutip.Qobj(dm) for dm in summed_dm_array]
 
-    for t in range(num_times):
-        state_t = sum(result.states[traj][t] for traj in range(result.ntraj))
-        state_t = state_t / result.ntraj
-        averaged_states.append(state_t)
-
-    # Replace the original result's states with the averaged states
-    result.states = averaged_states
+    result.states = averaged_dms
     return result
 
 def pack_mcsolve_chunks(H,state0,tlist,c_ops,ntraj = 1000,existing_chunk_num: int = 0,chunk_size = 4):
