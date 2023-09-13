@@ -1,6 +1,5 @@
 _pycache_/
 .DS_Store
-*.pkl
 *pycache*
 *.zip
 *mcsolve_result*
