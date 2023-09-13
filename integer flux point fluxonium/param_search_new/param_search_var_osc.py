@@ -70,64 +70,63 @@ class search_job:
     #     self.results = np.vectorize(get_estimations_with_progress)(self.EJ, self.EC_values, self.EL_values, self.Er_values)
     def run(self):
 
-        # Initialize lists to collect results
-        list_one_two_transition = []
-        list_differential_stark = []
-        list_qubit_zero_lamb = []
-        list_detunning_qubit = []
+        # # Initialize lists to collect results
+        # list_one_two_transition = []
+        # list_differential_stark = []
+        # list_qubit_zero_lamb = []
+        # list_detunning_qubit = []
 
-
-        args_list = [(self.EJ, EC, EL, Er) for EC, EL, Er in zip(self.EC_values, self.EL_values, self.Er_values)]
-
-        with ProcessPoolExecutor(max_workers=1) as executor:
-            results = list(executor.map(wrapper, args_list))
-
-        for result in results:
-            one_two_transition, differential_stark, qubit_zero_lamb, detunning_qubit = result
-            list_one_two_transition.append(one_two_transition)
-            list_differential_stark.append(differential_stark)
-            list_qubit_zero_lamb.append(qubit_zero_lamb)
-            list_detunning_qubit.append(detunning_qubit)
-
-        self.results = (
-            np.array(list_one_two_transition),
-            np.array(list_differential_stark),
-            np.array(list_qubit_zero_lamb),
-            np.array(list_detunning_qubit)
-        )
-        # manager = Manager()
-        # result_dict = manager.dict()
 
         # args_list = [(self.EJ, EC, EL, Er) for EC, EL, Er in zip(self.EC_values, self.EL_values, self.Er_values)]
-        # batch_size = int(len(args_list) / os.cpu_count())
-        # batched_args_list = [args_list[i:i + batch_size] for i in range(0, len(args_list), batch_size)]
 
-        # # Use multiprocessing to execute the tasks
-        # # with Pool(processes=os.cpu_count()) as pool:
-        # with Pool(processes=4) as pool:
-        #     pool.starmap(batch_wrapper, [(args, result_dict) for args in enumerate(batched_args_list)])
+        # with ProcessPoolExecutor(max_workers=1) as executor:
+        #     results = list(executor.map(wrapper, args_list))
 
-        # # Assemble the results
-        # sorted_results = []
-        # for batch_results in sorted(result_dict.values()):
-        #     for index, result in sorted(batch_results):
-        #         sorted_results.append(result)
+        # for result in results:
+        #     one_two_transition, differential_stark, qubit_zero_lamb, detunning_qubit = result
+        #     list_one_two_transition.append(one_two_transition)
+        #     list_differential_stark.append(differential_stark)
+        #     list_qubit_zero_lamb.append(qubit_zero_lamb)
+        #     list_detunning_qubit.append(detunning_qubit)
 
-        # # Convert lists to NumPy arrays
-        # list_one_two_transition, list_differential_stark, list_qubit_zero_lamb, list_detunning_qubit = zip(*sorted_results)
         # self.results = (
         #     np.array(list_one_two_transition),
         #     np.array(list_differential_stark),
         #     np.array(list_qubit_zero_lamb),
         #     np.array(list_detunning_qubit)
         # )
+        manager = Manager()
+        result_dict = manager.dict()
+
+        args_list = [(self.EJ, EC, EL, Er) for EC, EL, Er in zip(self.EC_values, self.EL_values, self.Er_values)]
+        batch_size = int(len(args_list) / os.cpu_count())
+        batched_args_list = [args_list[i:i + batch_size] for i in range(0, len(args_list), batch_size)]
+
+        # Use multiprocessing to execute the tasks
+        # with Pool(processes=os.cpu_count()) as pool:
+        with Pool(processes=1) as pool:
+            pool.starmap(batch_wrapper, [(args, result_dict) for args in enumerate(batched_args_list)])
+
+        # Assemble the results
+        sorted_results = []
+        for batch_results in sorted(result_dict.values()):
+            for index, result in sorted(batch_results):
+                sorted_results.append(result)
+
+        # Convert lists to NumPy arrays
+        list_one_two_transition, list_differential_stark, list_qubit_zero_lamb, list_detunning_qubit = zip(*sorted_results)
+        self.results = (
+            np.array(list_one_two_transition),
+            np.array(list_differential_stark),
+            np.array(list_qubit_zero_lamb),
+            np.array(list_detunning_qubit)
+        )
 
 
 
 
 def get_estimations(EJ, EC, EL, Er):
     start_time = time.time()
-
     g_strength = 0.3
     qubit_level = 9
     osc_level =16
@@ -135,28 +134,16 @@ def get_estimations(EJ, EC, EL, Er):
     qbt = scqubits.Fluxonium(EJ=EJ,EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
     q_evals = qbt.eigenvals()
 
-    print(f"Time for Fluxonium: {time.time() - start_time}")
-    start_time = time.time()
-
     one_two_transition = q_evals[2]-q_evals[1]
     E_osc = Er
     osc = scqubits.Oscillator(E_osc=E_osc,truncated_dim=osc_level)
-
-    print(f"Time for Oscillator: {time.time() - start_time}")
-    start_time = time.time()
 
     hilbertspace = scqubits.HilbertSpace([qbt, osc])
     hilbertspace.add_interaction(g_strength=g_strength,op1=qbt.n_operator,op2=osc.creation_operator,add_hc=True)
     hilbertspace.generate_lookup()
 
-    print(f"Time for HilbertSpace: {time.time() - start_time}")
-    start_time = time.time()
-
     product_to_dressed = generate_single_mapping(hilbertspace.hamiltonian())
     energies=  hilbertspace.eigenvals(qubit_level*osc_level)
-
-    print(f"Time for eigenvals: {time.time() - start_time}")
-    start_time = time.time()
 
     def stark(ql1,ql2,ol):
         return abs(energies[product_to_dressed[(ql2,ol)]]-energies[product_to_dressed[(ql1,ol)]])
