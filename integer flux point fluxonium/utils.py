@@ -20,6 +20,8 @@ from IPython.display import display
 import numpy as np
 import matplotlib.pyplot as plt
 import ipywidgets as widgets
+from ipywidgets import interact, FloatSlider
+
 import gzip
 import pickle
 import qutip

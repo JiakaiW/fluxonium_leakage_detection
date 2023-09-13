@@ -53,13 +53,12 @@ class search_job:
         self.results = None
 
     def run(self):
-        EC_grid, EL_grid = np.meshgrid(self.EC_values, self.EL_values)
-        self.results = np.vectorize(get_estimations)(self.EJ, EC_grid, EL_grid)
+        self.results = np.vectorize(get_estimations)(self.EJ, self.EC_values, self.EL_values)
 
 def get_estimations(EJ, EC, EL):
     g_strength = 0.3
-    qubit_level = 5
-    osc_level =5
+    qubit_level = 9
+    osc_level =16
 
     qbt = scqubits.Fluxonium(EJ=EJ,EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
     q_evals = qbt.eigenvals()
@@ -95,7 +94,7 @@ def main(idx):
         job = pickle.load(f)
     job.run()
     with gzip.GzipFile(fileobj=sys.stdout.buffer, mode='wb') as f_out:
-        pickle.dump(result, f_out)
+        pickle.dump(job, f_out)
 
 if __name__ == "__main__":
     idx = int(sys.argv[1])
