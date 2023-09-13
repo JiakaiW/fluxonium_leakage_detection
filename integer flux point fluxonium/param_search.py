@@ -63,7 +63,8 @@ def get_estimations(EJ, EC, EL):
     qbt = scqubits.Fluxonium(EJ=EJ,EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
     q_evals = qbt.eigenvals()
     one_two_transition = q_evals[2]-q_evals[1]
-    E_osc = q_evals[3] - q_evals[0]-0.01
+    zero_three_transition = q_evals[3] - q_evals[0]
+    E_osc = zero_three_transition-0.01
     osc = scqubits.Oscillator(E_osc=E_osc,truncated_dim=osc_level)
     hilbertspace = scqubits.HilbertSpace([qbt, osc])
     hilbertspace.add_interaction(g_strength=g_strength,op1=qbt.n_operator,op2=osc.creation_operator,add_hc=True)
@@ -84,6 +85,7 @@ def get_estimations(EJ, EC, EL):
     qubit_zero_lamb_on_osc01_23 = abs(lamb(0,1,0)-lamb(2,3,0))
     detunning_qubit01 = detuning(0,1) + detuning(0, 2)
     return  (one_two_transition,#Want it small
+             zero_three_transition,
              differential_stark_on_qubit_12_from_osc01+differential_stark_on_qubit_12_from_osc12,#Want it small
              qubit_zero_lamb_on_osc01_12+qubit_zero_lamb_on_osc01_23,#Want it small
              detunning_qubit01)#Want it big
