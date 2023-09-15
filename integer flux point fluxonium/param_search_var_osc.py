@@ -84,11 +84,11 @@ def get_estimations(EJ, EC, EL, Er):
         differential_stark_on_qubit_12_from_osc12 = abs(stark(1,2,1)-stark(1,2,2))
         qubit_zero_lamb_on_osc01_12 = abs(lamb(0,1,0)-lamb(1,2,0)) # For easy populating photons
         qubit_zero_lamb_on_osc01_23 = abs(lamb(0,1,0)-lamb(2,3,0))
-        detunning_qubit01 = detuning(0,1) + detuning(0, 2)
+        detunning = min(detuning(0,1),detuning(0, 2))
         return  (one_two_transition,#Want it small
-                differential_stark_on_qubit_12_from_osc01+differential_stark_on_qubit_12_from_osc12,#Want it small
-                qubit_zero_lamb_on_osc01_12+qubit_zero_lamb_on_osc01_23,#Want it small
-                detunning_qubit01)#Want it big
+                max(differential_stark_on_qubit_12_from_osc01,differential_stark_on_qubit_12_from_osc12),#Want it small
+                max(qubit_zero_lamb_on_osc01_12,qubit_zero_lamb_on_osc01_23),#Want it small
+                detunning)#Want it big
     except Exception as e:
         return (None, None, None, None)
 

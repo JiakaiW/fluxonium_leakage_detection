@@ -397,6 +397,10 @@ def merge_results(zip_files):
     num_files_done = 0
 
     for zip_file in zip_files:
+        if not os.path.exists(zip_file):
+            print(f"File {zip_file} does not exist. Skipping...")
+            continue
+
         with gzip.GzipFile(zip_file, "rb") as f:
             result = pickle.load(f)
 
