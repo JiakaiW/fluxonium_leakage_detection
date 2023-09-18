@@ -1,7 +1,8 @@
 import numpy as np
 import sys
 import pickle
-import scqubits
+from scqubits.utils.spectrum_utils import convert_evecs_to_ndarray
+from scqubits import Fluxonium, Oscillator, HilbertSpace
 import math
 import gzip
 
@@ -12,7 +13,7 @@ def generate_single_mapping(H_with_interaction_no_drive) -> np.ndarray:
     Use this function instead of scqubit's because I can change the overlap threshold here
     """
     evals, evecs = H_with_interaction_no_drive.eigenstates()
-    overlap_matrix = scqubits.utils.spectrum_utils.convert_evecs_to_ndarray(evecs)
+    overlap_matrix = convert_evecs_to_ndarray(evecs)
     # OVERLAP_THRESHOLD = 0.02
     product_state_names = []
     dims = H_with_interaction_no_drive.dims[0]
@@ -62,12 +63,12 @@ def get_estimations(EJ, EC, EL, Er):
         qubit_level = 9
         osc_level =16
 
-        qbt = scqubits.Fluxonium(EJ=EJ,EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
+        qbt = Fluxonium(EJ=EJ,EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
         q_evals = qbt.eigenvals()
         one_two_transition = q_evals[2]-q_evals[1]
         E_osc = Er
-        osc = scqubits.Oscillator(E_osc=E_osc,truncated_dim=osc_level)
-        hilbertspace = scqubits.HilbertSpace([qbt, osc])
+        osc = Oscillator(E_osc=E_osc,truncated_dim=osc_level)
+        hilbertspace = HilbertSpace([qbt, osc])
         hilbertspace.add_interaction(g_strength=g_strength,op1=qbt.n_operator,op2=osc.creation_operator,add_hc=True)
         hilbertspace.generate_lookup()
         product_to_dressed = generate_single_mapping(hilbertspace.hamiltonian())

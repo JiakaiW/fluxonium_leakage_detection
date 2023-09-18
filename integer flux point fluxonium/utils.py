@@ -595,7 +595,7 @@ def get_vectorized_compute_expectation_function():
     vmapped_function = vmap(compute_expectation, in_axes=(0, None))
     return  jit(vmapped_function)
 
-def plot_population(results,qubit_level,osc_level,product_to_dressed,a,w_d,tlist,fourier=False):
+def plot_population(results,qubit_level,osc_level,product_to_dressed,a,w_d,tlist,fourier=False,fix_ylim = True,plot_only_pn_alpha = False):
     product_states = [(ql,ol) for ql in range(qubit_level) for ol in range(osc_level)]
     idxs = [product_to_dressed[(s1, s2)] for (s1, s2) in product_states]
     tot_dims = qubit_level*osc_level
@@ -617,11 +617,12 @@ def plot_population(results,qubit_level,osc_level,product_to_dressed,a,w_d,tlist
             states = jnp.stack([jnp.array(q.full()) for q in results[i].states])  # assuming states contains QObj or density matrices
 
         results[i].expect = []
-        for idx in idxs:
-            dressed_state = jnp.zeros(tot_dims).at[idx].set(1).reshape(-1, 1)
-            dressed_state_op = jnp.outer(dressed_state, jnp.conj(dressed_state).T)
-            expectations = vectorized_compute_expectation(states, dressed_state_op)
-            results[i].expect.append(expectations)
+        if not plot_only_pn_alpha:
+            for idx in idxs:
+                dressed_state = jnp.zeros(tot_dims).at[idx].set(1).reshape(-1, 1)
+                dressed_state_op = jnp.outer(dressed_state, jnp.conj(dressed_state).T)
+                expectations = vectorized_compute_expectation(states, dressed_state_op)
+                results[i].expect.append(expectations)
         alpha_expect = vectorized_compute_expectation(states, a_op)
         pns_expect = vectorized_compute_expectation(states, pn_op)
         results[i].expect.append(alpha_expect)
@@ -636,12 +637,13 @@ def plot_population(results,qubit_level,osc_level,product_to_dressed,a,w_d,tlist
     fig, axes = plt.subplots(4,nlevels, figsize=(9, 6))
 
     for i in range(nlevels):
-        qubit_state_population = [np.zeros(shape=len(tlist))]*qubit_level
-        for idx, product_state in enumerate(product_states):
-            ql = product_state[0]
-            qubit_state_population[ql] += results[i].expect[idx]
-        for ql in range(nlevels):
-            axes[0][i].plot(tlist, qubit_state_population[ql], label=r"$\overline{|%s\rangle}$" % (f"{ql}"))
+        if not plot_only_pn_alpha:
+            qubit_state_population = [np.zeros(shape=len(tlist))]*qubit_level
+            for idx, product_state in enumerate(product_states):
+                ql = product_state[0]
+                qubit_state_population[ql] += results[i].expect[idx]
+            for ql in range(nlevels):
+                axes[0][i].plot(tlist, qubit_state_population[ql], label=r"$\overline{|%s\rangle}$" % (f"{ql}"))
         
 
         #*np.exp(-1j * 2 * np.pi * first_dominant_freq * tlist) # *np.exp(-1j * 2 * np.pi * dominant_freq * tlist)  
@@ -658,29 +660,29 @@ def plot_population(results,qubit_level,osc_level,product_to_dressed,a,w_d,tlist
         # Photon number
         axes[0][i].plot(tlist, results[i].expect[-1], label=r"photon number")
 
-
-    axes[0][nlevels-1].legend(loc='center', ncol=1, bbox_to_anchor=(1.5, 0.5))
-    axes[1][nlevels-1].legend(loc='center', ncol=1, bbox_to_anchor=(1.3, 0.5))
-    axes[2][nlevels-1].legend(loc='center', ncol=1, bbox_to_anchor=(1.3, 0.5))
-    axes[3][nlevels-1].legend(loc='center', ncol=1, bbox_to_anchor=(1.4, 0.5))
-    plt.ylabel("population")
-    plt.xlabel("t (ns)")
-    for row in [0,1,2,3]:
-        max_x_range,min_x_range,max_y_range,min_y_range = 0,0,0,0
-        for col in range(nlevels):
-            ymin, ymax = axes[row][col].get_ylim()
-            xmin, xmax = axes[row][col].get_xlim()
-            if ymax > max_y_range:
-                max_y_range = ymax
-            if ymin < min_y_range:
-                min_y_range = ymin
-            if xmax > max_x_range:
-                max_x_range = xmax
-            if xmin < min_x_range:
-                min_x_range = xmin
-        for col in range(nlevels):
-            axes[row][col].set_ylim(min_y_range, max_y_range)
-            axes[row][col].set_xlim(min_x_range,max_x_range)
+    if fix_ylim: 
+        axes[0][nlevels-1].legend(loc='center', ncol=1, bbox_to_anchor=(1.5, 0.5))
+        axes[1][nlevels-1].legend(loc='center', ncol=1, bbox_to_anchor=(1.3, 0.5))
+        axes[2][nlevels-1].legend(loc='center', ncol=1, bbox_to_anchor=(1.3, 0.5))
+        axes[3][nlevels-1].legend(loc='center', ncol=1, bbox_to_anchor=(1.4, 0.5))
+        plt.ylabel("population")
+        plt.xlabel("t (ns)")
+        for row in [0,1,2,3]:
+            max_x_range,min_x_range,max_y_range,min_y_range = 0,0,0,0
+            for col in range(nlevels):
+                ymin, ymax = axes[row][col].get_ylim()
+                xmin, xmax = axes[row][col].get_xlim()
+                if ymax > max_y_range:
+                    max_y_range = ymax
+                if ymin < min_y_range:
+                    min_y_range = ymin
+                if xmax > max_x_range:
+                    max_x_range = xmax
+                if xmin < min_x_range:
+                    min_x_range = xmin
+            for col in range(nlevels):
+                axes[row][col].set_ylim(min_y_range, max_y_range)
+                axes[row][col].set_xlim(min_x_range,max_x_range)
     # plt.yscale('log')
     plt.show()
 
