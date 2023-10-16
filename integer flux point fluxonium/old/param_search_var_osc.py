@@ -47,20 +47,21 @@ def generate_single_mapping(H_with_interaction_no_drive) -> np.ndarray:
 
 
 class search_job:
-    def __init__(self, EJ, EC_values, EL_values,Er_values):
+    def __init__(self, EJ, EC_values, EL_values,Er_values,g_values):
         self.EJ = EJ
         self.EC_values = EC_values
         self.EL_values = EL_values
         self.Er_values = Er_values
+        self.g_values = g_values
         self.results = None
 
     def run(self):
-        self.results = np.vectorize(get_estimations)(self.EJ, self.EC_values, self.EL_values, self.Er_values)
+        self.results = np.vectorize(get_estimations)(self.EJ, self.EC_values, self.EL_values, self.Er_values,self.g_values)
 
-def get_estimations(EJ, EC, EL, Er):
+def get_estimations(EJ, EC, EL, Er,g):
     try:
-        g_strength = 0.3
-        qubit_level = 9
+        g_strength = g
+        qubit_level = 20
         osc_level =16
 
         qbt = Fluxonium(EJ=EJ,EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
@@ -72,7 +73,8 @@ def get_estimations(EJ, EC, EL, Er):
         hilbertspace.add_interaction(g_strength=g_strength,op1=qbt.n_operator,op2=osc.creation_operator,add_hc=True)
         hilbertspace.generate_lookup()
         product_to_dressed = generate_single_mapping(hilbertspace.hamiltonian())
-        energies=  hilbertspace.eigenvals(qubit_level*osc_level)
+        energies =  hilbertspace.eigenvals(qubit_level*osc_level)
+
         def stark(ql1,ql2,ol):
             return abs(energies[product_to_dressed[(ql2,ol)]]-energies[product_to_dressed[(ql1,ol)]])
         def lamb(ol1,ol2,ql):
@@ -81,17 +83,25 @@ def get_estimations(EJ, EC, EL, Er):
             return abs((energies[product_to_dressed[(ql1,1)]]-energies[product_to_dressed[(ql1,0)]])  -
                             (energies[product_to_dressed[(ql2,1)]]-energies[product_to_dressed[(ql2,0)]]))
         
-        differential_stark_on_qubit_12_from_osc01 = abs(stark(1,2,0)-stark(1,2,1)) # For reducing differential phase on off-diagonal elements of the qubit
-        differential_stark_on_qubit_12_from_osc12 = abs(stark(1,2,1)-stark(1,2,2))
-        qubit_zero_lamb_on_osc01_12 = abs(lamb(0,1,0)-lamb(1,2,0)) # For easy populating photons
-        qubit_zero_lamb_on_osc01_23 = abs(lamb(0,1,0)-lamb(2,3,0))
-        detunning = min(detuning(0,1),detuning(0, 2))
-        return  (one_two_transition,#Want it small
-                max(differential_stark_on_qubit_12_from_osc01,differential_stark_on_qubit_12_from_osc12),#Want it small
-                max(qubit_zero_lamb_on_osc01_12,qubit_zero_lamb_on_osc01_23),#Want it small
-                detunning)#Want it big
+        results = (np.float16(one_two_transition),#Want it small
+                np.float16(stark(1,2,0)-stark(1,2,1)),
+                np.float16(stark(1,2,0)-stark(1,2,2)),# differential_stark_on_qubit_12_from_osc02 Want it small
+                np.float16(abs(lamb(0,1,0)-lamb(1,2,0))), # For easy populating photons
+                np.float16(abs(lamb(0,1,0)-lamb(2,3,0))),
+                np.float16(abs(lamb(0,1,0)-lamb(3,4,0))),
+                np.float16(abs(lamb(0,1,0)-lamb(4,5,0))),
+                np.float16(abs(lamb(0,1,0)-lamb(5,6,0))),
+                np.float16(abs(lamb(0,1,0)-lamb(6,7,0))),#Want it small
+                np.float16(detuning(0,1)),
+                np.float16(detuning(0,2)))#Want it big
+        results = tuple(x if np.shape(x) == () else None for x in results)
+        return results
+
     except Exception as e:
-        return (None, None, None, None)
+        return (None, None, None,
+                 None,None,None,
+                 None,None,None,
+                 None,None)
 
 
 def main(idx):

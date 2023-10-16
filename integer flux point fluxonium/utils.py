@@ -67,41 +67,48 @@ def generate_single_mapping(H_with_interaction_no_drive) -> np.ndarray:
     return product_to_dressed
 
 
-def plot_specturum(qubit, resonator, hilbertspace, max_qubit_level = 4,max_resonator_level=3,
+def plot_specturum(qubit, resonator, hilbertspace, max_qubit_level = 6,max_resonator_level=3,
                     flagged_transitions = [[[0,0],[0,1]],[[1,0],[1,1]],[[2,0],[2,1]],[[3,0],[3,1]]]):
     product_to_dressed = generate_single_mapping(hilbertspace.hamiltonian())
     energy_text_size = 8
     # clear_output(wait=True)
     qubit_ori_energies = qubit.eigenvals(max_qubit_level)
     resonator_ori_energies = resonator.eigenvals(max_resonator_level)
-    fig, old_ax = qubit.plot_wavefunction(which = [0,1,2,3,4,5,6,7])
-    left, bottom, width, height = 1, 0, 1, 1  
-    ax = fig.add_axes([left, bottom, width, height])
-    fig.set_size_inches(4, 4)
+    # First plot using the existing figure and axes
+    # First plot
+    fig1, old_ax = qubit.plot_wavefunction(which=[0,1,2,3,4,5,6,7,8,9,10,11])
+    plt.show()  # Explicitly show the first plot
+
+    # Second plot
+    fig2, ax2 = plt.subplots(figsize=(10, 10))
+    plt.sca(ax2)  # Set the current axes instance to ax2
+
     for ql in range(0,max_qubit_level):
         for rl in range(0,max_resonator_level):
-            original = (qubit_ori_energies[ql] + resonator_ori_energies[rl])#* 2 * np.pi
+            original = (qubit_ori_energies[ql] + resonator_ori_energies[rl])
             x1,x2 = ql-0.25,ql+0.25
-            ax.plot([x1, x2], [original, original], linewidth=1, color='red')
-            ax.text(ql, original, f"{original:.3f}", fontsize=energy_text_size, ha='center', va='bottom')
+            plt.plot([x1, x2], [original, original], linewidth=1, color='red')
+            plt.text(ql, original, f"{original:.3f}", fontsize=energy_text_size, ha='center', va='bottom')
 
             dressed_state_index = product_to_dressed[(ql,rl)]
-            dressed = hilbertspace.energy_by_dressed_index(dressed_state_index)#* 2 * np.pi
-            ax.plot([x1, x2], [dressed, dressed], linewidth=1, color='green')
-            ax.text(ql, dressed, f"{dressed:.3f}", fontsize=energy_text_size, ha='center', va='top')
+            dressed = hilbertspace.energy_by_dressed_index(dressed_state_index)
+            plt.plot([x1, x2], [dressed, dressed], linewidth=1, color='green')
+            plt.text(ql, dressed, f"{dressed:.3f}", fontsize=energy_text_size, ha='center', va='top')
 
     for transition in flagged_transitions:
         state1, state2 = transition[0],transition[1]
         dressed_index1 = product_to_dressed[(state1[0],state1[1])]
         dressed_index2 = product_to_dressed[(state2[0],state2[1])]
-        if dressed_index1!= None and dressed_index2!= None:
-            energy1 = hilbertspace.energy_by_dressed_index(dressed_index1)#* 2 * np.pi
-            energy2 = hilbertspace.energy_by_dressed_index(dressed_index2)#* 2 * np.pi
-            ax.plot([state1[0], state2[0]], [energy1, energy2], linewidth=1, color='green')
-            ax.text((state1[0]+ state2[0])/2, (energy1+ energy2)/2, f"{energy2-energy1:.3f}", fontsize=energy_text_size, ha='center', va='top')
+        if dressed_index1 != None and dressed_index2 != None:
+            energy1 = hilbertspace.energy_by_dressed_index(dressed_index1)
+            energy2 = hilbertspace.energy_by_dressed_index(dressed_index2)
+            plt.plot([state1[0], state2[0]], [energy1, energy2], linewidth=1, color='green')
+            plt.text((state1[0]+ state2[0])/2, (energy1+ energy2)/2, f"{energy2-energy1:.3f}", fontsize=energy_text_size, ha='center', va='top')
         else:
             print("dressed_state_index contain None")
-    plt.show()
+
+    plt.show()  # Explicitly show the second plot
+
 
 
 def dressed_transition_frequency_over_2pi(hilbertspace,s0, s1) -> float:
@@ -310,9 +317,9 @@ def transition_frequency(hilbertspace,s0: int, s1: int) -> float:
 
 
 class CustomOdeResult:
-    def __init__(self, t = [], y=[]):
-        self.t = t
-        self.y = y
+    def __init__(self, times = [], states=[]):
+        self.times = times
+        self.states = states
 
 def solve_with_mesolve(H,state0,tlist,options = None,c_ops = None):
     return qutip.mesolve(
@@ -323,6 +330,8 @@ def solve_with_mesolve(H,state0,tlist,options = None,c_ops = None):
         progress_bar = True,
         c_ops= c_ops
     )
+
+
 
 
 def solve_with_mcsolve(H,state0,tlist,options = None,c_ops = None,ntraj= 50):
@@ -433,6 +442,52 @@ def merge_results(zip_files):
     return final_result
 
 
+def merge_results_and_slice(zip_files):
+    # Used to merge mcsolve results on HTC condor
+    num_total_states = 0
+    averaged_dm_array = None
+    tlist = None
+
+    num_files_tot = len(zip_files)
+    num_files_done = 0
+
+    for zip_file in zip_files:
+        if not os.path.exists(zip_file):
+            print(f"File {zip_file} does not exist. Skipping...")
+            continue
+
+        with gzip.GzipFile(zip_file, "rb") as f:
+            result = pickle.load(f)
+
+        if tlist is None:
+            tlist = result.times[::8]
+
+        num_new_states = len(result.seeds)
+        num_total_states += num_new_states
+
+        # Convert states to density matrices and sum them up
+        states_array = np.array([[state.full() for state in traj] for traj in result.states[::8]])
+        summed_dm_array = np.einsum('ntrc,ntij->tri', states_array, states_array.conj()) 
+        if averaged_dm_array is None:
+            averaged_dm_array = summed_dm_array
+        else:
+            averaged_dm_array += summed_dm_array
+
+        num_files_done += 1
+        clear_output()
+        print(f"done:{num_files_done}/{num_files_tot}")
+    averaged_dm_array /= num_total_states
+    
+    # Convert the final averaged density matrices back to Qobj
+    averaged_dms = [qutip.Qobj(dm) for dm in averaged_dm_array]
+
+    final_result = qutip.solver.Result()
+    final_result.states = averaged_dms
+    final_result.times = tlist
+
+    return final_result
+
+
 def aggregate_results(num_chunks):
     # Used for time chunks in GPU solver
     aggregated_states = []
@@ -485,7 +540,7 @@ def solve_with_jax_gpu(ham_solver, y0, tlist, signals, max_dt=1, chunk_size=10):
         clear_output(wait=True)
         print(f"Progress: Chunk {i + 1}/{len(tlist_chunks)} solved.")
 
-    ode_result = CustomOdeResult(t=tlist, y=chunk_results)
+    ode_result = CustomOdeResult(times=tlist, states=chunk_results)
     return ode_result
 
 def solve_with_jax_gpu_lindbladian(ham_solver, y0, tlist, signals, max_dt=1, chunk_size=10):
@@ -526,7 +581,7 @@ def solve_with_jax_gpu_lindbladian(ham_solver, y0, tlist, signals, max_dt=1, chu
             current_state = result.y[-1]
             clear_output(wait=True)
             print(f"Progress: Interval {i + 1}/{num_intervals} solved.")
-        ode_result = CustomOdeResult(t=t_results, y=chunk_results)
+        ode_result = CustomOdeResult(t_results, chunk_results)
     
     return ode_result
 
@@ -689,7 +744,11 @@ def plot_population(results,qubit_level,osc_level,product_to_dressed,a,w_d,tlist
 
 
 def plot_heatmap(result, time_index, product_to_dressed, qubit_levels, oscillator_levels):
-    dm = result.states[time_index]
+    if hasattr(result, 'states'):
+        dm = result.states[time_index]
+    elif hasattr(result, 'y'):
+        dm = result.y[time_index]
+
     grid = np.zeros((qubit_levels, oscillator_levels))
 
     for qubit_level in range(qubit_levels):
@@ -708,11 +767,16 @@ def plot_heatmap(result, time_index, product_to_dressed, qubit_levels, oscillato
     plt.ylabel('Qubit Level')
     plt.title(f'Expectation Values at t = {result.times[time_index]}')
     plt.show()
+
 def interactive_heatmap(result, product_to_dressed, qubit_levels, oscillator_levels):
+    if hasattr(result, 'times'):
+        times = result.times
+    elif hasattr(result, 't'):
+        times = result.t
     time_slider = widgets.IntSlider(
         value=0,
         min=0,
-        max=len(result.times) - 1,
+        max=len(times) - 1,
         step=1,
         description='Time Index:',
         continuous_update=False
