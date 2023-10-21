@@ -28,6 +28,265 @@ import qutip
 import numpy as np
 from IPython.display import clear_output
 
+
+
+import numpy as np
+import qutip
+
+def truncate(qobj: qutip.Qobj, dimension: int) -> qutip.Qobj:
+    if qobj.shape[1] == 1:  # is ket
+        return qutip.Qobj(qobj.full()[:dimension, :])
+    else:  # is operator or density matrix
+        return qutip.Qobj(qobj.full()[:dimension, :dimension])
+
+def pad_back(qobj: qutip.Qobj, full_dimension: int) -> qutip.Qobj:
+    if qobj.shape[1] == 1:  # is ket
+        truncated_dim = qobj.shape[0]
+        padded_vector = np.zeros((full_dimension, 1), dtype=complex)
+        padded_vector[:truncated_dim, :] = qobj.full()
+        return qutip.Qobj(padded_vector)
+    else:  # is operator or density matrix
+        truncated_dim = qobj.shape[0]
+        padded_matrix = np.zeros((full_dimension, full_dimension), dtype=complex)
+        padded_matrix[:truncated_dim, :truncated_dim] = qobj.full()
+        return qutip.Qobj(padded_matrix)
+    
+
+
+
+def truncate_by_qubit_level(qobj: qutip.Qobj, max_qubit_level: int, product_to_dressed: dict) -> qutip.Qobj:
+    indices_to_keep = [dressed_level for (qubit_level, _), dressed_level in product_to_dressed.items() if qubit_level < max_qubit_level]
+    indices_to_keep.sort()
+    if qobj.shape[1] == 1:  # is ket
+        truncated_vector = qobj.full()[indices_to_keep, :]
+        return qutip.Qobj(truncated_vector)
+    else:  # is operator or density matrix
+        truncated_matrix = qobj.full()[np.ix_(indices_to_keep, indices_to_keep)]
+        return qutip.Qobj(truncated_matrix)
+
+def pad_back_from_qubit_level(qobj: qutip.Qobj, max_qubit_level, product_to_dressed: dict) -> qutip.Qobj:
+    indices_to_keep = [dressed_level for (qubit_level, _), dressed_level in product_to_dressed.items() if qubit_level < max_qubit_level]
+    indices_to_keep.sort()
+    full_dimension = max(product_to_dressed.values())+1
+    if qobj.shape[1] == 1:  # is ket
+        padded_vector = np.zeros((full_dimension, 1), dtype=complex)
+        padded_vector[indices_to_keep, :] = qobj.full()
+        return qutip.Qobj(padded_vector)
+    else:  # is operator or density matrix
+        padded_matrix = np.zeros((full_dimension, full_dimension), dtype=complex)
+        padded_matrix[np.ix_(indices_to_keep, indices_to_keep)] = qobj.full()
+        return qutip.Qobj(padded_matrix)
+    
+def test_truncate_by_ql():
+    product_to_dressed = {(0, 0): 0, 
+                        (1, 0): 1, 
+                        (0, 1): 2, 
+                        (1, 1): 3, 
+                        (2, 0): 4, 
+                        (0, 2): 5, 
+                        (1, 2): 6, 
+                        (2, 1): 7, 
+                        (2, 2): 8}
+
+
+    # Example qubit operator (replace this with your actual qubit operator)
+    qubit_operator = qutip.tensor(qutip.Qobj(np.array([
+        [0,1,2],
+        [3,4,5],
+        [6,7,8]
+    ])), qutip.identity(3))  
+
+    # Truncate
+    truncated_qubit_operator = truncate_by_qubit_level(qubit_operator, 2, product_to_dressed)
+
+    # Pad back
+    padded_back_qubit_operator = pad_back_from_qubit_level(truncated_qubit_operator, 2, product_to_dressed)
+    assert  np.allclose(truncated_qubit_operator, np.array([[0.+0.j, 0.+0.j, 0.+0.j, 1.+0.j, 0.+0.j, 2.+0.j],
+       [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j],
+       [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 1.+0.j, 0.+0.j],
+       [3.+0.j, 0.+0.j, 0.+0.j, 4.+0.j, 0.+0.j, 5.+0.j],
+       [0.+0.j, 0.+0.j, 3.+0.j, 0.+0.j, 4.+0.j, 0.+0.j],
+       [6.+0.j, 0.+0.j, 0.+0.j, 7.+0.j, 0.+0.j, 8.+0.j]]))
+    assert np.allclose(padded_back_qubit_operator, np.array(np.array([
+        [0.+0.j, 0.+0.j, 0.+0.j, 1.+0.j, 0.+0.j, 0.+0.j, 2.+0.j, 0.+0.j,0.+0.j],
+       [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j],
+       [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 1.+0.j, 0.+0.j, 0.+0.j,0.+0.j],
+       [3.+0.j, 0.+0.j, 0.+0.j, 4.+0.j, 0.+0.j, 0.+0.j, 5.+0.j, 0.+0.j,0.+0.j],
+       [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j],
+       [0.+0.j, 0.+0.j, 3.+0.j, 0.+0.j, 0.+0.j, 4.+0.j, 0.+0.j, 0.+0.j,0.+0.j],
+       [6.+0.j, 0.+0.j, 0.+0.j, 7.+0.j, 0.+0.j, 0.+0.j, 8.+0.j, 0.+0.j,0.+0.j],
+       [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j,0.+0.j],
+       [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j]]))), str(padded_back_qubit_operator)
+    
+
+# test_truncate_by_ql()
+
+
+
+def truncate_by_qubit_level_and_states(qobj: qutip.Qobj, max_qubit_level: int, truncated_dim: int, product_to_dressed: dict) -> qutip.Qobj:
+    indices_to_keep = [dressed_level for (qubit_level, _), dressed_level in product_to_dressed.items() if qubit_level < max_qubit_level]
+    indices_to_keep.sort()
+    indices_to_keep = indices_to_keep[:truncated_dim]  # Apply the cap on the total number of states
+
+    if qobj.shape[1] == 1:  # is ket
+        truncated_vector = qobj.full()[indices_to_keep, :]
+        return qutip.Qobj(truncated_vector)
+    else:  # is operator or density matrix
+        truncated_matrix = qobj.full()[np.ix_(indices_to_keep, indices_to_keep)]
+        return qutip.Qobj(truncated_matrix)
+
+def pad_back_from_qubit_level_and_states(qobj: qutip.Qobj, max_qubit_level, truncated_dim, product_to_dressed: dict) -> qutip.Qobj:
+    indices_to_keep = [dressed_level for (qubit_level, _), dressed_level in product_to_dressed.items() if qubit_level < max_qubit_level]
+    indices_to_keep.sort()
+    indices_to_keep = indices_to_keep[:truncated_dim]  # Apply the cap on the total number of states
+
+    full_dimension = max(product_to_dressed.values()) + 1
+    if qobj.shape[1] == 1:  # is ket
+        padded_vector = np.zeros((full_dimension, 1), dtype=complex)
+        padded_vector[indices_to_keep, :] = qobj.full()
+        return qutip.Qobj(padded_vector)
+    else:  # is operator or density matrix
+        padded_matrix = np.zeros((full_dimension, full_dimension), dtype=complex)
+        padded_matrix[np.ix_(indices_to_keep, indices_to_keep)] = qobj.full()
+        return qutip.Qobj(padded_matrix)
+    
+
+def test_truncate_and_pad_with_states():
+    # Define the mapping between product basis states and dressed states
+    product_to_dressed = {(0, 0): 0, 
+                            (1, 0): 1, 
+                            (0, 1): 2, 
+                            (1, 1): 3, 
+                            (2, 0): 4, 
+                            (0, 2): 5, 
+                            (1, 2): 6, 
+                            (2, 1): 7, 
+                            (2, 2): 8}
+
+    # Create an example qubit operator
+    qubit_operator = qutip.tensor(qutip.Qobj(np.array([
+        [0, 1, 2],
+        [3, 4, 5],
+        [6, 7, 8]
+    ])), qutip.identity(3))
+
+    # Truncate
+    truncated_qubit_operator = truncate_by_qubit_level_and_states(qubit_operator, max_qubit_level=2, truncated_dim=5, product_to_dressed=product_to_dressed)
+
+    # Pad back
+    padded_back_qubit_operator = pad_back_from_qubit_level_and_states(truncated_qubit_operator, max_qubit_level=2, truncated_dim=5, product_to_dressed=product_to_dressed)
+
+    # Check the validity of the truncation and padding operations
+    truncated_expected = np.array([
+        [0, 0, 0, 1, 0],
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 1],
+        [3, 0, 0, 4, 0],
+        [0, 0, 3, 0, 4]
+    ], dtype=complex)
+
+    assert np.allclose(truncated_qubit_operator.full(), truncated_expected), f"Truncated does not match: \n{truncated_qubit_operator.full()}"
+
+    padded_expected = np.array([
+        [0.+0.j, 0.+0.j, 0.+0.j, 1.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j],
+        [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j,0.+0.j],
+        [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 1.+0.j, 0.+0.j, 0.+0.j,0.+0.j],
+        [3.+0.j, 0.+0.j, 0.+0.j, 4.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j,0.+0.j],
+        [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j,0.+0.j],
+        [0.+0.j, 0.+0.j, 3.+0.j, 0.+0.j, 0.+0.j, 4.+0.j, 0.+0.j, 0.+0.j,0.+0.j],
+        [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j,0.+0.j],
+        [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j],
+        [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j]], dtype=complex)
+
+    assert np.allclose(padded_back_qubit_operator.full(), padded_expected), f"Padded does not match:\n{padded_back_qubit_operator.full() == padded_expected}"
+
+# test_truncate_and_pad_with_states()
+
+
+
+def truncate_custom(qobj: qutip.Qobj, products_to_keep: list, product_to_dressed: dict) -> qutip.Qobj:
+    indices_to_keep = [dressed_level for (qubit_level, oscillator_level), dressed_level in product_to_dressed.items() if [qubit_level, oscillator_level] in products_to_keep]
+    indices_to_keep.sort()
+
+    if qobj.shape[1] == 1:  # is ket
+        truncated_vector = qobj.full()[indices_to_keep, :]
+        return qutip.Qobj(truncated_vector)
+    else:  # is operator or density matrix
+        truncated_matrix = qobj.full()[np.ix_(indices_to_keep, indices_to_keep)]
+        return qutip.Qobj(truncated_matrix)
+
+def pad_back_custom(qobj: qutip.Qobj, products_to_keep: list, product_to_dressed: dict) -> qutip.Qobj:
+    indices_to_keep = [dressed_level for (qubit_level, oscillator_level), dressed_level in product_to_dressed.items() if [qubit_level, oscillator_level] in products_to_keep]
+    indices_to_keep.sort()
+
+    full_dimension = max(product_to_dressed.values()) + 1
+
+    if qobj.shape[1] == 1:  # is ket
+        padded_vector = np.zeros((full_dimension, 1), dtype=complex)
+        padded_vector[indices_to_keep, :] = qobj.full()
+        return qutip.Qobj(padded_vector)
+    else:  # is operator or density matrix
+        padded_matrix = np.zeros((full_dimension, full_dimension), dtype=complex)
+        padded_matrix[np.ix_(indices_to_keep, indices_to_keep)] = qobj.full()
+        return qutip.Qobj(padded_matrix)
+
+def test_truncate_and_pad_custom():
+    # Define the mapping between product basis states and dressed states
+    product_to_dressed = {(0, 0): 0, 
+                            (1, 0): 1, 
+                            (0, 1): 2, 
+                            (1, 1): 3, 
+                            (2, 0): 4, 
+                            (0, 2): 5, 
+                            (1, 2): 6, 
+                            (2, 1): 7, 
+                            (2, 2): 8}
+
+    # Specify which products to keep
+    products_to_keep = [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2]]
+
+    # Create an example qubit operator
+    qubit_operator = qutip.tensor(qutip.Qobj(np.array([
+        [0, 1, 2],
+        [3, 4, 5],
+        [6, 7, 8]
+    ])), qutip.identity(3))
+
+    # Truncate using custom function
+    truncated_qubit_operator = truncate_custom(qubit_operator, products_to_keep, product_to_dressed)
+
+    # Pad back using custom function
+    padded_back_qubit_operator = pad_back_custom(truncated_qubit_operator, products_to_keep, product_to_dressed)
+
+    # Expected truncated matrix based on products_to_keep
+    truncated_expected = np.array([
+        [0, 0, 0, 1, 0 ,2],
+        [0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 1, 0],
+        [3, 0, 0, 4, 0, 5],
+        [0, 0, 3, 0, 4, 0],
+        [6, 0, 0, 7, 0, 8]
+    ], dtype=complex)
+
+    assert np.allclose(truncated_qubit_operator.full(), truncated_expected), f"Truncated does not match: \n{truncated_qubit_operator.full()}"
+
+    padded_expected = np.array([
+        [0, 0, 0, 1, 0, 0 ,2, 0,0],
+        [0, 0, 0, 0, 0, 0, 0, 0,0],
+        [0, 0, 0, 0, 0, 1, 0, 0,0],
+        [3, 0, 0, 4, 0, 0, 5, 0,0],
+        [0, 0, 0, 0, 0, 0, 0, 0,0],
+        [0, 0, 3, 0, 0, 4, 0, 0,0],
+        [6, 0, 0, 7, 0, 0, 8, 0,0],
+        [0, 0, 0, 0, 0, 0, 0, 0,0],
+        [0, 0, 0, 0, 0, 0, 0, 0,0],
+    ], dtype=complex)
+
+    assert np.allclose(padded_back_qubit_operator.full(), padded_expected), f"Padded does not match:\n{padded_expected == padded_back_qubit_operator.full()}"
+
+# test_truncate_and_pad_custom()
+
+
 def generate_single_mapping(H_with_interaction_no_drive) -> np.ndarray:
     """
     Maps product of bare states to dressed state
