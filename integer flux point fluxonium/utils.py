@@ -997,7 +997,17 @@ def plot_population(results,qubit_level,osc_level,product_to_dressed,a,w_d,tlist
             for col in range(nlevels):
                 axes[row][col].set_ylim(min_y_range, max_y_range)
                 axes[row][col].set_xlim(min_x_range,max_x_range)
+                # Set the third row y range equal x range
+                if row == 3:
+                    axes[row][col].set_ylim(min(min_x_range,min_y_range), max(max_x_range,max_y_range))
+                    axes[row][col].set_xlim(min(min_x_range,min_y_range),max(max_x_range,max_y_range))
     # plt.yscale('log')
+    for ax in axes.flat:
+        ax.minorticks_on()
+        ax.grid(True)
+        ax.grid(which='minor', linestyle=':', linewidth='0.5', color='gray')
+    for col in axes[3]:
+        col.set_aspect('equal', 'box')
     plt.show()
 
 
@@ -1074,3 +1084,66 @@ def compute_and_store_2_level_dm(args):
     
     with open(file_name, 'wb') as f:
         pickle.dump(rho_2_level, f)
+
+
+
+from tqdm.notebook import tqdm
+
+
+
+
+
+def get_shift(ele,Delta_ij):
+    return abs(ele)**2 / Delta_ij
+def sweep_Er(EJ,EC,EL,Er_list,g=0.1):
+    qubit_level = 30
+    qbt = scqubits.Fluxonium(EJ=EJ,EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
+    
+    evals = qbt.eigenvals(10)
+    print(f"computational freq {evals[2]-evals[1]}")
+    elements = qbt.matrixelement_table('n_operator',evals_count = 10)
+    zero_shift = []
+    one_shift = []
+    two_shift = []
+
+    for n, Er in enumerate(tqdm(Er_list, desc = "Er loop")):
+        zero_shifts = [get_shift(elements[0,j],evals[j]-evals[0]-Er) for j in [3,5,7]] 
+        one_shifts = [get_shift(elements[1,j],evals[j]-evals[1]-Er) for j in [4,6]]
+        two_shifts = [get_shift(elements[2,j],evals[j]-evals[2]-Er) for j in [3,5,7,9]]
+        zero_shift.append(abs(sum(zero_shifts)))
+        one_shift.append(abs(sum(one_shifts)))
+        two_shift.append(abs(sum(two_shifts)))
+        # zero_shift.append(sum(zero_shifts))
+        # one_shift.append(sum(one_shifts))
+        # two_shift.append(sum(two_shifts))
+
+    vertical_lines_for_dispersive_limit = []
+    for j in [3,5,7]:
+        for positive in [1,-1]:
+            vertical_lines_for_dispersive_limit.append(evals[j]-evals[0] + positive * g * abs(elements[0,j]))
+
+
+    plt.figure()
+    plt.plot(Er_list, zero_shift, label='zero_shift')
+    plt.plot(Er_list, one_shift, label='one_shift')
+    plt.plot(Er_list, two_shift, label='two_shift')
+
+    for vline in vertical_lines_for_dispersive_limit:
+        plt.axvline(x=vline, color='red', linestyle='--', linewidth=2)
+
+    # plt.ylim(0,10)
+    plt.grid(which='major', linestyle='-', linewidth='0.5', color='black')
+    plt.minorticks_on()
+    plt.grid(which='minor', linestyle='--', linewidth='0.5', color='gray')
+    plt.xlim(Er_list[0],Er_list[-1])
+    plt.yscale('log')
+
+    # plt.yscale('symlog')
+    # plt.ylim(-1,1)
+    # ax = plt.gca()
+    # ax.yaxis.set_ticks([-1,1, -1e-1, 1e-1, -1e-2,1e-2, -1e-3, 1e-3, -1e-4,1e-4])
+
+    plt.xlabel('Er-values')
+    plt.ylabel('sum of shift from relavent transitions')
+    plt.legend()
+    plt.show()
