@@ -326,49 +326,61 @@ def generate_single_mapping(H_with_interaction_no_drive) -> np.ndarray:
     return product_to_dressed
 
 
-def plot_specturum(qubit, resonator, hilbertspace, max_qubit_level = 6,max_resonator_level=3,
-                    flagged_transitions = [[[0,0],[0,1]],[[1,0],[1,1]],[[2,0],[2,1]],[[3,0],[3,1]]]):
+from bidict import bidict
+def plot_specturum(qubit, resonator, hilbertspace, num_levels = 20,
+                    flagged_transitions = [[[0,0],[0,1]],[[1,0],[1,1]],[[2,0],[2,1]]]):
     product_to_dressed = generate_single_mapping(hilbertspace.hamiltonian())
     energy_text_size = 8
     # clear_output(wait=True)
+    
+    fig, old_ax = qubit.plot_wavefunction(which = [0,1,2,3,4,5,6,7,8,9,10,11])
+    left, bottom, width, height = 1, 0, 1, 1  
+    ax = fig.add_axes([left, bottom, width, height])
+    fig.set_size_inches(8, 8)
+
+    product_to_dressed = bidict(product_to_dressed)
+    qls = [product[0] for product in [product_to_dressed.inv[l] for l in range(num_levels)]]
+    rls = [product[1] for product in [product_to_dressed.inv[l] for l in range(num_levels)]]
+    max_qubit_level = max(qls) +1 
+    max_resonator_level = max(rls) +1
     qubit_ori_energies = qubit.eigenvals(max_qubit_level)
     resonator_ori_energies = resonator.eigenvals(max_resonator_level)
-    # First plot using the existing figure and axes
-    # First plot
-    fig1, old_ax = qubit.plot_wavefunction(which=[0,1,2,3,4,5,6,7,8,9,10,11])
-    plt.show()  # Explicitly show the first plot
 
-    # Second plot
-    fig2, ax2 = plt.subplots(figsize=(10, 10))
-    plt.sca(ax2)  # Set the current axes instance to ax2
+    
+    max_rl_for_ql = [0] *3
+    for l in range(num_levels):
+        (ql,rl) = product_to_dressed.inv[l]
+        original = (qubit_ori_energies[ql] + resonator_ori_energies[rl])#* 2 * np.pi
+        x1,x2 = ql-0.25,ql+0.25
+        ax.plot([x1, x2], [original, original], linewidth=1, color='red')
+        ax.text(ql, original, f"{original:.3f}", fontsize=energy_text_size, ha='center', va='bottom')
 
-    for ql in range(0,max_qubit_level):
-        for rl in range(0,max_resonator_level):
-            original = (qubit_ori_energies[ql] + resonator_ori_energies[rl])
-            x1,x2 = ql-0.25,ql+0.25
-            plt.plot([x1, x2], [original, original], linewidth=1, color='red')
-            plt.text(ql, original, f"{original:.3f}", fontsize=energy_text_size, ha='center', va='bottom')
+        dressed_state_index = product_to_dressed[(ql,rl)]
+        dressed = hilbertspace.energy_by_dressed_index(dressed_state_index)#* 2 * np.pi
+        ax.plot([x1, x2], [dressed, dressed], linewidth=1, color='green')
+        ax.text(ql, dressed, f"{dressed:.3f}", fontsize=energy_text_size, ha='center', va='top')
 
-            dressed_state_index = product_to_dressed[(ql,rl)]
-            dressed = hilbertspace.energy_by_dressed_index(dressed_state_index)
-            plt.plot([x1, x2], [dressed, dressed], linewidth=1, color='green')
-            plt.text(ql, dressed, f"{dressed:.3f}", fontsize=energy_text_size, ha='center', va='top')
+        if ql in [0,1,2]:
+            if rl > max_rl_for_ql[ql]:
+                max_rl_for_ql[ql]=rl
 
+    flagged_transitions = []
+    for ql in [0,1,2]:
+        for i in range(max_rl_for_ql[ql] ):
+            flagged_transitions.append([[ql,i],[ql,i+1]])
     for transition in flagged_transitions:
         state1, state2 = transition[0],transition[1]
         dressed_index1 = product_to_dressed[(state1[0],state1[1])]
         dressed_index2 = product_to_dressed[(state2[0],state2[1])]
-        if dressed_index1 != None and dressed_index2 != None:
-            energy1 = hilbertspace.energy_by_dressed_index(dressed_index1)
-            energy2 = hilbertspace.energy_by_dressed_index(dressed_index2)
-            plt.plot([state1[0], state2[0]], [energy1, energy2], linewidth=1, color='green')
-            plt.text((state1[0]+ state2[0])/2, (energy1+ energy2)/2, f"{energy2-energy1:.3f}", fontsize=energy_text_size, ha='center', va='top')
+        if dressed_index1!= None and dressed_index2!= None:
+            energy1 = hilbertspace.energy_by_dressed_index(dressed_index1)#* 2 * np.pi
+            energy2 = hilbertspace.energy_by_dressed_index(dressed_index2)#* 2 * np.pi
+            ax.plot([state1[0], max_qubit_level], [energy2, energy2], linewidth=1, color='green')
+            ax.plot([state1[0], state2[0]], [energy1, energy2], linewidth=1, color='green')
+            ax.text((state1[0]+ state2[0])/2, (energy1+ energy2)/2, f"{energy2-energy1:.3f}", fontsize=energy_text_size, ha='center', va='top')
         else:
             print("dressed_state_index contain None")
-
-    plt.show()  # Explicitly show the second plot
-
-
+    plt.show()
 
 def dressed_transition_frequency_over_2pi(hilbertspace,s0, s1) -> float:
     return (hilbertspace.energy_by_dressed_index(s1) - hilbertspace.energy_by_dressed_index(s0))
@@ -1095,54 +1107,50 @@ from tqdm.notebook import tqdm
 
 def get_shift(ele,Delta_ij):
     return abs(ele)**2 / Delta_ij
+
+
 def sweep_Er(EJ,EC,EL,Er_list,g=0.1):
     qubit_level = 30
     qbt = scqubits.Fluxonium(EJ=EJ,EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
     
-    evals = qbt.eigenvals(10)
+    num_evals = 20
+    evals = qbt.eigenvals(num_evals)
     print(f"computational freq {evals[2]-evals[1]}")
-    elements = qbt.matrixelement_table('n_operator',evals_count = 10)
+    elements = qbt.matrixelement_table('n_operator',evals_count = num_evals)
     zero_shift = []
     one_shift = []
     two_shift = []
 
     for n, Er in enumerate(tqdm(Er_list, desc = "Er loop")):
-        zero_shifts = [get_shift(elements[0,j],evals[j]-evals[0]-Er) for j in [3,5,7]] 
-        one_shifts = [get_shift(elements[1,j],evals[j]-evals[1]-Er) for j in [4,6]]
-        two_shifts = [get_shift(elements[2,j],evals[j]-evals[2]-Er) for j in [3,5,7,9]]
+        zero_shifts = [get_shift(elements[0,j],evals[j]-evals[0]-Er) for j in range(num_evals)] 
+        one_shifts = [get_shift(elements[1,j],evals[j]-evals[1]-Er) for j in range(num_evals)]
+        two_shifts = [get_shift(elements[2,j],evals[j]-evals[2]-Er) for j in range(num_evals)]
         zero_shift.append(abs(sum(zero_shifts)))
         one_shift.append(abs(sum(one_shifts)))
         two_shift.append(abs(sum(two_shifts)))
-        # zero_shift.append(sum(zero_shifts))
-        # one_shift.append(sum(one_shifts))
-        # two_shift.append(sum(two_shifts))
-
-    vertical_lines_for_dispersive_limit = []
-    for j in [3,5,7]:
-        for positive in [1,-1]:
-            vertical_lines_for_dispersive_limit.append(evals[j]-evals[0] + positive * g * abs(elements[0,j]))
 
 
-    plt.figure()
+    plt.figure(figsize=[10,4])
     plt.plot(Er_list, zero_shift, label='zero_shift')
     plt.plot(Er_list, one_shift, label='one_shift')
     plt.plot(Er_list, two_shift, label='two_shift')
 
-    for vline in vertical_lines_for_dispersive_limit:
-        plt.axvline(x=vline, color='red', linestyle='--', linewidth=2)
+    y_positions = [1e0, 0.5e1, 1e1,1.5e1,2e1]
+    y_position_index = 0
+    for ql1 in [0,1,2]:
+        for ql2 in range(12):
+            transition =  abs(evals[ql2]-evals[ql1])
+            # print(f'transition: {transition}, ele: {elements[ql1,ql2]}')
+            if abs(elements[ql1,ql2]) > 1e-5 and transition < Er_list[-1] and transition > Er_list[0]:
+                plt.text(transition, y_positions[y_position_index], f'{ql1}-{ql2}', fontsize=8, ha='center', va='bottom')
+                y_position_index = (y_position_index+1)%len(y_positions)
 
-    # plt.ylim(0,10)
     plt.grid(which='major', linestyle='-', linewidth='0.5', color='black')
     plt.minorticks_on()
     plt.grid(which='minor', linestyle='--', linewidth='0.5', color='gray')
     plt.xlim(Er_list[0],Er_list[-1])
     plt.yscale('log')
-
-    # plt.yscale('symlog')
-    # plt.ylim(-1,1)
-    # ax = plt.gca()
-    # ax.yaxis.set_ticks([-1,1, -1e-1, 1e-1, -1e-2,1e-2, -1e-3, 1e-3, -1e-4,1e-4])
-
+    plt.ylim(1e-2,10)
     plt.xlabel('Er-values')
     plt.ylabel('sum of shift from relavent transitions')
     plt.legend()
