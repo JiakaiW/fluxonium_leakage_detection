@@ -1117,41 +1117,44 @@ def sweep_Er(EJ,EC,EL,Er_list,g=0.1):
     evals = qbt.eigenvals(num_evals)
     print(f"computational freq {evals[2]-evals[1]}")
     elements = qbt.matrixelement_table('n_operator',evals_count = num_evals)
-    zero_shift = []
-    one_shift = []
-    two_shift = []
 
-    for n, Er in enumerate(tqdm(Er_list, desc = "Er loop")):
-        zero_shifts = [get_shift(elements[0,j],evals[j]-evals[0]-Er) for j in range(num_evals)] 
-        one_shifts = [get_shift(elements[1,j],evals[j]-evals[1]-Er) for j in range(num_evals)]
-        two_shifts = [get_shift(elements[2,j],evals[j]-evals[2]-Er) for j in range(num_evals)]
-        zero_shift.append(abs(sum(zero_shifts)))
-        one_shift.append(abs(sum(one_shifts)))
-        two_shift.append(abs(sum(two_shifts)))
-
-
+    y_max = 10
     plt.figure(figsize=[10,4])
-    plt.plot(Er_list, zero_shift, label='zero_shift')
-    plt.plot(Er_list, one_shift, label='one_shift')
-    plt.plot(Er_list, two_shift, label='two_shift')
+    for ql in [0,1,2,3]:
+        shift_from_qubit_transition = []
+        for n, Er in enumerate(tqdm(Er_list, desc = "Er loop")):
+            shifts = [get_shift(elements[ql,ql2],evals[ql2]-evals[ql]-Er) for ql2 in range(num_evals)] 
+            shift_from_qubit_transition.append(abs(sum(shifts)))
+        plt.plot(Er_list, shift_from_qubit_transition, label=f'shift from transition from {ql}')
 
-    y_positions = [1e0, 0.5e1, 1e1,1.5e1,2e1]
-    y_position_index = 0
-    for ql1 in [0,1,2]:
-        for ql2 in range(12):
-            transition =  abs(evals[ql2]-evals[ql1])
-            # print(f'transition: {transition}, ele: {elements[ql1,ql2]}')
-            if abs(elements[ql1,ql2]) > 1e-5 and transition < Er_list[-1] and transition > Er_list[0]:
-                plt.text(transition, y_positions[y_position_index], f'{ql1}-{ql2}', fontsize=8, ha='center', va='bottom')
-                y_position_index = (y_position_index+1)%len(y_positions)
+        # Plot the label of transition on the tip of poles
+        for ql2 in range(ql+1,12):
+            transition =  abs(evals[ql2]-evals[ql])
+            if abs(elements[ql,ql2]) > 1e-5 and transition < Er_list[-1] and transition > Er_list[0]:
+                Er_index = find_closest_using_numpy(Er_list, transition)
+                y_pos = shift_from_qubit_transition[Er_index]
+                y_pos = min(y_pos, y_max)
+                plt.text(transition, y_pos, f'{ql}-{ql2}', fontsize=8, ha='center', va='bottom')
 
     plt.grid(which='major', linestyle='-', linewidth='0.5', color='black')
     plt.minorticks_on()
     plt.grid(which='minor', linestyle='--', linewidth='0.5', color='gray')
     plt.xlim(Er_list[0],Er_list[-1])
     plt.yscale('log')
-    plt.ylim(1e-2,10)
+    plt.ylim(1e-2,y_max)
     plt.xlabel('Er-values')
     plt.ylabel('sum of shift from relavent transitions')
+    plt.title('qubit-state-dependent shift on oscillator frequency, \n with poles corresponding to matrix element > 1e-5 marked')
     plt.legend()
     plt.show()
+
+
+##########################################
+# Utilities for utilities
+##########################################
+
+def find_closest_using_numpy(l, f):
+    arr = np.array(l)
+    idx = np.searchsorted(arr, f, side='left')
+    idx = np.clip(idx, 1, len(arr) - 1)
+    return idx - 1 if abs(arr[idx - 1] - f) <= abs(arr[idx] - f) else idx
