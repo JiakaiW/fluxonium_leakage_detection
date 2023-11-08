@@ -1109,7 +1109,7 @@ def get_shift(ele,Delta_ij):
     return abs(ele)**2 / Delta_ij
 
 
-def sweep_Er(EJ,EC,EL,Er_list,g=0.1):
+def sweep_Er(EJ,EC,EL,Er_list,qls = [0,1,2,3],symlog = True,g=0.1):
     qubit_level = 30
     qbt = scqubits.Fluxonium(EJ=EJ,EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
     
@@ -1119,12 +1119,16 @@ def sweep_Er(EJ,EC,EL,Er_list,g=0.1):
     elements = qbt.matrixelement_table('n_operator',evals_count = num_evals)
 
     y_max = 10
+    y_min = -10
     plt.figure(figsize=[10,4])
-    for ql in [0,1,2,3]:
+    for ql in qls:
         shift_from_qubit_transition = []
         for n, Er in enumerate(tqdm(Er_list, desc = "Er loop")):
             shifts = [get_shift(elements[ql,ql2],evals[ql2]-evals[ql]-Er) for ql2 in range(num_evals)] 
-            shift_from_qubit_transition.append(abs(sum(shifts)))
+            if not symlog:
+                shift_from_qubit_transition.append(abs(sum(shifts)))
+            else:
+                shift_from_qubit_transition.append(sum(shifts))
         plt.plot(Er_list, shift_from_qubit_transition, label=f'shift from transition from {ql}')
 
         # Plot the label of transition on the tip of poles
@@ -1134,14 +1138,20 @@ def sweep_Er(EJ,EC,EL,Er_list,g=0.1):
                 Er_index = find_closest_using_numpy(Er_list, transition)
                 y_pos = shift_from_qubit_transition[Er_index]
                 y_pos = min(y_pos, y_max)
+                y_pos = max(y_pos, y_min)
                 plt.text(transition, y_pos, f'{ql}-{ql2}', fontsize=8, ha='center', va='bottom')
 
     plt.grid(which='major', linestyle='-', linewidth='0.5', color='black')
     plt.minorticks_on()
     plt.grid(which='minor', linestyle='--', linewidth='0.5', color='gray')
     plt.xlim(Er_list[0],Er_list[-1])
-    plt.yscale('log')
-    plt.ylim(1e-2,y_max)
+    if not symlog:
+        plt.yscale('log')
+        plt.ylim(1e-2,y_max)
+    else:
+        plt.yscale('symlog', linthresh=1e-2,linscale=0.1)
+        plt.ylim(y_min,y_max)
+    
     plt.xlabel('Er-values')
     plt.ylabel('sum of shift from relavent transitions')
     plt.title('qubit-state-dependent shift on oscillator frequency, \n with poles corresponding to matrix element > 1e-5 marked')
