@@ -3,30 +3,37 @@ import pickle
 import numpy as np
 import zipfile
 import gzip
+from dataclasses import dataclass
+from typing import List
 
-amp = 0.002
+amp = 0.004
 
-w_d = 2.9951027102366083
+w_d = 7.2647876791261305
 
 
 def square_cos(t,*args):
     cos = np.cos(w_d * 2*np.pi * t)
     return  2*np.pi * amp * cos
 
+
+@dataclass
 class packed_mcsolve_problem:
-    def __init__(self, H, state0, tlist, chunk_seeds, c_ops):
-        self.H = H
-        self.state0 = state0
-        self.tlist = tlist
-        self.chunk_seeds = chunk_seeds
-        self.c_ops = c_ops
+    H: List
+    psi0: qutip.qobj.Qobj
+    tlist: np.ndarray
+    chunk_seeds: List
+    c_ops: List
+    e_ops: List
+    keep_dms: bool = False
+
     def run_mcsolve(self):
         result = qutip.mcsolve(
             H=self.H,
-            psi0=self.state0,
+            psi0=self.psi0,
             tlist=self.tlist,
-            options=qutip.Options(store_states=True, nsteps=2000, num_cpus=len(self.chunk_seeds),seeds=self.chunk_seeds),
+            options=qutip.Options(store_states=self.keep_dms, num_cpus=len(self.chunk_seeds),seeds=self.chunk_seeds),
             c_ops=self.c_ops,
+            e_ops=self.e_ops,
             ntraj=len(self.chunk_seeds),
             progress_bar=False
         )

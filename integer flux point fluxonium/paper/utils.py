@@ -627,7 +627,19 @@ def solve_with_mcsolve(H,state0,tlist,options = None,c_ops = None,ntraj= 50):
     result.states = averaged_dms
     return result
 
-def pack_mcsolve_chunks(H,state0,tlist,c_ops,ntraj = 1000,existing_chunk_num: int = 0,chunk_size = 4):
+
+
+
+
+def pack_mcsolve_chunks(H,
+                        psi0,
+                        tlist,
+                        c_ops,
+                        e_ops,
+                        ntraj = 500,
+                        existing_chunk_num: int = 0,
+                        keep_dms = False,
+                        chunk_size = 4):
     # Pack chunks that can be sent to htc_condor
 
     seeds = list(np.random.randint(0, 2**32,
@@ -640,10 +652,12 @@ def pack_mcsolve_chunks(H,state0,tlist,c_ops,ntraj = 1000,existing_chunk_num: in
         chunk_seeds = seeds[i:i + chunk_size]
         problem = packed_mcsolve_problem(
             H=H,
-            state0=state0,
+            psi0=psi0,
             tlist=tlist,
             chunk_seeds=chunk_seeds,
-            c_ops=c_ops
+            c_ops=c_ops,
+            e_ops = e_ops,
+            keep_dms = keep_dms
         )
 
         with open(f"{chunk_id}.pkl", "wb") as f:
@@ -775,6 +789,10 @@ def aggregate_results(num_chunks):
     aggregated_result.seeds = aggregated_seeds
 
     return aggregated_result
+
+
+
+
 
 
 
@@ -1067,8 +1085,9 @@ def interactive_heatmap(result, product_to_dressed, qubit_levels, oscillator_lev
                      time_index=time_slider)
 
 
-def dressed_to_2_level_dm(dressed_dm,product_to_dressed, qubit_level, osc_level,computational_0,computational_1):
-    dressed_dm_data = dressed_dm.full()
+def dressed_to_2_level_dm(dressed_dm,product_to_dressed, qubit_level, osc_level,computational_0,computational_1,products_to_keep=None):
+    dressed_dm_data = pad_back_custom(dressed_dm, products_to_keep, product_to_dressed)
+    dressed_dm_data = dressed_dm_data.full()
     rho_product = np.zeros((qubit_level * osc_level, qubit_level * osc_level), dtype=complex)
     for (ql, ol), dressed_level in product_to_dressed.items():
         index1 = ql * osc_level + ol
@@ -1076,7 +1095,7 @@ def dressed_to_2_level_dm(dressed_dm,product_to_dressed, qubit_level, osc_level,
         for (ql2, ol2), dressed_level2 in product_to_dressed.items():
             index2 = ql2 * osc_level + ol2
 
-            # TODO  the order of product_state and product_state2 is probably wrong
+            # TODO  the order of product_state and product_state2 is probably wrong, but it produces the right result. :(
             element = dressed_dm_data[dressed_level, dressed_level2]
             rho_product[index1, index2] += element
     rho_product = qutip.Qobj(rho_product, dims=[[qubit_level, osc_level], [qubit_level, osc_level]])
@@ -1090,9 +1109,9 @@ def dressed_to_2_level_dm(dressed_dm,product_to_dressed, qubit_level, osc_level,
     return rho_2_level
     
 def compute_and_store_2_level_dm(args):
-    results,file_name, i, j, product_to_dressed, qubit_level, osc_level,computational_0, computational_1 = args
+    results,file_name, i, j, product_to_dressed, qubit_level, osc_level,computational_0, computational_1,products_to_keep  = args
     
-    rho_2_level = dressed_to_2_level_dm(results[i].states[j], product_to_dressed, qubit_level, osc_level, computational_0, computational_1)
+    rho_2_level = dressed_to_2_level_dm(results[i].states[j], product_to_dressed, qubit_level, osc_level, computational_0, computational_1,products_to_keep)
     
     with open(file_name, 'wb') as f:
         pickle.dump(rho_2_level, f)
