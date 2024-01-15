@@ -1054,10 +1054,17 @@ def plot_heatmap(result, time_index, product_to_dressed, qubit_levels, oscillato
         for oscillator_level in range(oscillator_levels):
             product_state = (qubit_level, oscillator_level)
             dressed_state = product_to_dressed[product_state]
-            # Create a basis state corresponding to the dressed state
-            basis_state = qutip.basis(dm.dims[0][0], dressed_state)
-            # Calculate the expectation value
-            expectation_value = qutip.expect(basis_state * basis_state.dag(), dm)
+            if dressed_state <= dm.dims[0][0]:
+                # Create a basis state corresponding to the dressed state
+                try:
+                    basis_state = qutip.basis(dm.dims[0][0], dressed_state)
+                except:
+                    print(dm.dims[0][0])
+                    print(dressed_state)
+                # Calculate the expectation value
+                expectation_value = qutip.expect(basis_state * basis_state.dag(), dm)
+            else:
+                expectation_value = 0
             grid[qubit_level, oscillator_level] = expectation_value
 
     plt.imshow(grid, cmap='viridis', origin='lower')
