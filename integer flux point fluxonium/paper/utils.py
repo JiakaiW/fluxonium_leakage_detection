@@ -1,208 +1,230 @@
-import qutip
-import numpy as np
-from matplotlib import pyplot as plt
-import scqubits
-from typing import List
-import math
+from bidict import bidict
+import concurrent
+from dataclasses import dataclass
+import importlib.util
+import ipywidgets as widgets
 from IPython.display import clear_output
-from jax import vmap
 import jax.numpy as jnp
-from jax import jit
-from mcsolve_on_node import packed_mcsolve_problem
-import pickle
-import zipfile
+from jax import jit, vmap
+import math
+import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
+import numpy as np
 import os
-import numpy as np
-import matplotlib.pyplot as plt
-from qutip import Qobj, expect, basis, ket2dm
-import ipywidgets as widgets
-from IPython.display import display
-import numpy as np
-import matplotlib.pyplot as plt
-import ipywidgets as widgets
-from ipywidgets import interact, FloatSlider
-
-import gzip
 import pickle
 import qutip
-import numpy as np
-from IPython.display import clear_output
+import scqubits
+from typing import List, Any
+from tqdm.notebook import tqdm
+import uuid
 
 
+############################################################################
+#
+#
+# fluxonium_oscillator_system and run_fluxonium_osc_system_mesolve_jobs are used
+#  to reduce duplicating code about creating qutip objects and running simulations
+#
+############################################################################
 
-import numpy as np
-import qutip
 
-def truncate(qobj: qutip.Qobj, dimension: int) -> qutip.Qobj:
-    if qobj.shape[1] == 1:  # is ket
-        return qutip.Qobj(qobj.full()[:dimension, :])
-    else:  # is operator or density matrix
-        return qutip.Qobj(qobj.full()[:dimension, :dimension])
+class fluxonium_oscillator_system:
+    '''
+    Because the code for initializing the system, do truncation, and run mesovle is re-used so often, 
+    I decide to create a class for it
+    '''
+    def __init__(self,
+                EJ:float = 3,
+                EC:float = 0.6,
+                EL:float = 0.13,
+                Er:float = 7.2622522,
+                g_strength:float = 0.3,
+                qubit_level:float = 30,
+                osc_level:float = 30,
+                kappa = 0.001,
+                products_to_keep: List[List[int]]= None,
+                
+                ):
+        '''
+        Initialize objects before truncation
+        '''
+        self.qubit_level = qubit_level
+        self.osc_level = osc_level
+        self.qbt = scqubits.Fluxonium(EJ=EJ,EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
+        self.osc = scqubits.Oscillator(E_osc=Er,truncated_dim=osc_level)
+        self.hilbertspace = scqubits.HilbertSpace([self.qbt, self.osc])
+        self.hilbertspace.add_interaction(g_strength=g_strength,op1=self.qbt.n_operator,op2=self.osc.creation_operator,add_hc=True)
+        self.hilbertspace.generate_lookup()
+        self.product_to_dressed = generate_single_mapping(self.hilbertspace.hamiltonian())
+        
+        '''
+        Define how to truncate
+        '''
+        if products_to_keep != None:
+            self.products_to_keep = products_to_keep
+        else:
+            self.products_to_keep = [[ql, ol] for ql in [1,2,3] for ol in range(10) ] \
+                                + [[ql, ol] for ql in [0] for ol in range(30) ]
 
-def pad_back(qobj: qutip.Qobj, full_dimension: int) -> qutip.Qobj:
-    if qobj.shape[1] == 1:  # is ket
-        truncated_dim = qobj.shape[0]
-        padded_vector = np.zeros((full_dimension, 1), dtype=complex)
-        padded_vector[:truncated_dim, :] = qobj.full()
-        return qutip.Qobj(padded_vector)
-    else:  # is operator or density matrix
-        truncated_dim = qobj.shape[0]
-        padded_matrix = np.zeros((full_dimension, full_dimension), dtype=complex)
-        padded_matrix[:truncated_dim, :truncated_dim] = qobj.full()
-        return qutip.Qobj(padded_matrix)
+        
+        '''
+        Truncate objects
+        '''
+        self.a = qutip.Qobj(self.hilbertspace.op_in_dressed_eigenbasis(op=self.osc.annihilation_operator)[:, :])
+        self.a_trunc = self.truncate_function(self.a)
+        (evals,) = self.hilbertspace["evals"]
+        self.diag_dressed_hamiltonian = self.truncate_function(qutip.Qobj((
+                2 * np.pi * qutip.Qobj(np.diag(evals),
+                dims=[self.hilbertspace.subsystem_dims] * 2)
+        )[:, :]))
+        self.w_d = transition_frequency(self.hilbertspace,self.product_to_dressed[(0,0)],self.product_to_dressed[(0,1)] ) 
+        self.c_ops = [np.sqrt(kappa) * self.a_trunc]
+        
+
+    def truncate_function(self,qobj):
+        return truncate_custom(qobj, self.products_to_keep, self.product_to_dressed)
     
+    def pad_back_function(self,qobj):
+        return pad_back_custom(qobj, self.products_to_keep, self.product_to_dressed)
+        
+    def run_mesolve_on_driving_osc(self,
+                    intial_states,
+                    tlist,
+                    osc_decay = False,
+                    e_ops = None,
+                    amp = 0.004,
+                    max_workers = 8,
+                    t_stop=None,
+                    ):
+        '''
+        This function runs mesolve on multiple initial states using multi-processing,
+          and return a list of qutip.solver.result
+        '''
+
+
+        H_with_drive = [
+            self.diag_dressed_hamiltonian,
+            [self.a_trunc+self.a_trunc.dag(), square_cos],
+        ]
+        additional_args = {'w_d': self.w_d, 'amp': amp, 't_stop': t_stop}
+
+
+        results = [None] * len(intial_states)
+        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(mesolve_and_pad, 
+                                       rho0=intial_states[i], 
+                                       H_with_drive=H_with_drive,
+                                       tlist=tlist, 
+                                       products_to_keep = self.products_to_keep,
+                                       product_to_dressed = self.product_to_dressed,
+                                       additional_args = additional_args,
+                                       c_ops=self.c_ops if osc_decay else None,
+                                       e_ops = e_ops
+                                       ): i for i in range(len(intial_states))}
+            
+            for future in concurrent.futures.as_completed(futures):
+                original_index = futures[future]
+                results[original_index] = future.result()
+
+        return results
+
+
+def run_fluxonium_osc_system_mesolve_jobs(
+        list_of_systems: List[fluxonium_oscillator_system],
+        list_of_kwargs: list[Any],
+        max_workers = 8
+    ):
+    '''
+    This function helps run mesolve of different fluxonium_oscillator_system and different initial states concurrently
+    Args:
+        list_of_systems: list of fluxonium_oscillator_system
+        list_of_kwargs: list of kwargs dictionaries used to call run_mesolve_on_driving_osc
+            a single kwargs should be a dictionary like {'intial_state',
+                                                        'tlist',
+                                                        'osc_decay' : False,
+                                                        'e_ops' : None,
+                                                        'amp' : 0.004,
+                                                        't_stop':None,}
+    '''
+    assert len(list_of_systems) == len(list_of_kwargs)
+    # Step-1, define functions
+    list_of_H_with_drive = []
+    list_of_additional_args = []
+    for system,kwargs in zip(list_of_systems,list_of_kwargs):
+        H_with_drive = [
+            system.diag_dressed_hamiltonian,
+            [system.a_trunc+system.a_trunc.dag(), square_cos],
+        ]
+        list_of_H_with_drive.append(H_with_drive)
+        list_of_additional_args.append({'w_d': system.w_d, 'amp': kwargs['amp'], 't_stop': kwargs['t_stop']})
+
+    results = [None] * len(list_of_systems)
+    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(mesolve_and_pad, 
+                                    rho0=list_of_kwargs[i]['intial_state'], 
+                                    H_with_drive=list_of_H_with_drive[i],
+                                    tlist=list_of_kwargs[i]['tlist'], 
+                                    products_to_keep = list_of_systems[i].products_to_keep,
+                                    product_to_dressed = list_of_systems[i].product_to_dressed,
+                                    additional_args = list_of_additional_args[i],
+                                    c_ops=list_of_systems[i].c_ops if list_of_kwargs[i]['osc_decay'] else None,
+                                    e_ops = list_of_kwargs[i]['e_ops']
+                                    ): i for i in range(len(list_of_systems))}
+        
+        for future in concurrent.futures.as_completed(futures):
+            original_index = futures[future]
+            results[original_index] = future.result()
+    return results
 
 
 
-def truncate_by_qubit_level(qobj: qutip.Qobj, max_qubit_level: int, product_to_dressed: dict) -> qutip.Qobj:
-    indices_to_keep = [dressed_level for (qubit_level, _), dressed_level in product_to_dressed.items() if qubit_level < max_qubit_level]
-    indices_to_keep.sort()
-    if qobj.shape[1] == 1:  # is ket
-        truncated_vector = qobj.full()[indices_to_keep, :]
-        return qutip.Qobj(truncated_vector)
-    else:  # is operator or density matrix
-        truncated_matrix = qobj.full()[np.ix_(indices_to_keep, indices_to_keep)]
-        return qutip.Qobj(truncated_matrix)
-
-def pad_back_from_qubit_level(qobj: qutip.Qobj, max_qubit_level, product_to_dressed: dict) -> qutip.Qobj:
-    indices_to_keep = [dressed_level for (qubit_level, _), dressed_level in product_to_dressed.items() if qubit_level < max_qubit_level]
-    indices_to_keep.sort()
-    full_dimension = max(product_to_dressed.values())+1
-    if qobj.shape[1] == 1:  # is ket
-        padded_vector = np.zeros((full_dimension, 1), dtype=complex)
-        padded_vector[indices_to_keep, :] = qobj.full()
-        return qutip.Qobj(padded_vector)
-    else:  # is operator or density matrix
-        padded_matrix = np.zeros((full_dimension, full_dimension), dtype=complex)
-        padded_matrix[np.ix_(indices_to_keep, indices_to_keep)] = qobj.full()
-        return qutip.Qobj(padded_matrix)
+def square_cos(t, args):
+    w_d = args['w_d']
+    amp = args['amp']
+    t_stop = args.get('t_stop', None)
+    if t_stop != None:
+        if t <= t_stop:
+            cos = np.cos(w_d * 2 * np.pi * t)
+            return 2 * np.pi * amp * cos
+        else:
+            return 0
+    else:
+        cos = np.cos(w_d * 2 * np.pi * t)
+        return 2 * np.pi * amp * cos
     
-def test_truncate_by_ql():
-    product_to_dressed = {(0, 0): 0, 
-                        (1, 0): 1, 
-                        (0, 1): 2, 
-                        (1, 1): 3, 
-                        (2, 0): 4, 
-                        (0, 2): 5, 
-                        (1, 2): 6, 
-                        (2, 1): 7, 
-                        (2, 2): 8}
+def mesolve_and_pad(rho0,
+            H_with_drive,
+            tlist, 
+            products_to_keep,
+            product_to_dressed,
+            additional_args,
+            c_ops = None,
+            e_ops = None,
+            ):
 
-
-    # Example qubit operator (replace this with your actual qubit operator)
-    qubit_operator = qutip.tensor(qutip.Qobj(np.array([
-        [0,1,2],
-        [3,4,5],
-        [6,7,8]
-    ])), qutip.identity(3))  
-
-    # Truncate
-    truncated_qubit_operator = truncate_by_qubit_level(qubit_operator, 2, product_to_dressed)
-
-    # Pad back
-    padded_back_qubit_operator = pad_back_from_qubit_level(truncated_qubit_operator, 2, product_to_dressed)
-    assert  np.allclose(truncated_qubit_operator, np.array([[0.+0.j, 0.+0.j, 0.+0.j, 1.+0.j, 0.+0.j, 2.+0.j],
-       [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j],
-       [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 1.+0.j, 0.+0.j],
-       [3.+0.j, 0.+0.j, 0.+0.j, 4.+0.j, 0.+0.j, 5.+0.j],
-       [0.+0.j, 0.+0.j, 3.+0.j, 0.+0.j, 4.+0.j, 0.+0.j],
-       [6.+0.j, 0.+0.j, 0.+0.j, 7.+0.j, 0.+0.j, 8.+0.j]]))
-    assert np.allclose(padded_back_qubit_operator, np.array(np.array([
-        [0.+0.j, 0.+0.j, 0.+0.j, 1.+0.j, 0.+0.j, 0.+0.j, 2.+0.j, 0.+0.j,0.+0.j],
-       [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j],
-       [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 1.+0.j, 0.+0.j, 0.+0.j,0.+0.j],
-       [3.+0.j, 0.+0.j, 0.+0.j, 4.+0.j, 0.+0.j, 0.+0.j, 5.+0.j, 0.+0.j,0.+0.j],
-       [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j],
-       [0.+0.j, 0.+0.j, 3.+0.j, 0.+0.j, 0.+0.j, 4.+0.j, 0.+0.j, 0.+0.j,0.+0.j],
-       [6.+0.j, 0.+0.j, 0.+0.j, 7.+0.j, 0.+0.j, 0.+0.j, 8.+0.j, 0.+0.j,0.+0.j],
-       [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j,0.+0.j],
-       [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j]]))), str(padded_back_qubit_operator)
-    
-
-# test_truncate_by_ql()
+    result = qutip.mesolve(
+        H=H_with_drive,
+        rho0=rho0,
+        tlist=tlist,
+        c_ops=c_ops,
+        e_ops = e_ops,
+        args=additional_args,
+        options=qutip.Options(store_states=True, nsteps=80000, num_cpus=1),
+        progress_bar = qutip.ui.progressbar.EnhancedTextProgressBar(),
+    )
+    padded_states = [pad_back_custom(state, products_to_keep, product_to_dressed) for state in result.states]
+    result.states = padded_states
+    return result
 
 
 
-def truncate_by_qubit_level_and_states(qobj: qutip.Qobj, max_qubit_level: int, truncated_dim: int, product_to_dressed: dict) -> qutip.Qobj:
-    indices_to_keep = [dressed_level for (qubit_level, _), dressed_level in product_to_dressed.items() if qubit_level < max_qubit_level]
-    indices_to_keep.sort()
-    indices_to_keep = indices_to_keep[:truncated_dim]  # Apply the cap on the total number of states
-
-    if qobj.shape[1] == 1:  # is ket
-        truncated_vector = qobj.full()[indices_to_keep, :]
-        return qutip.Qobj(truncated_vector)
-    else:  # is operator or density matrix
-        truncated_matrix = qobj.full()[np.ix_(indices_to_keep, indices_to_keep)]
-        return qutip.Qobj(truncated_matrix)
-
-def pad_back_from_qubit_level_and_states(qobj: qutip.Qobj, max_qubit_level, truncated_dim, product_to_dressed: dict) -> qutip.Qobj:
-    indices_to_keep = [dressed_level for (qubit_level, _), dressed_level in product_to_dressed.items() if qubit_level < max_qubit_level]
-    indices_to_keep.sort()
-    indices_to_keep = indices_to_keep[:truncated_dim]  # Apply the cap on the total number of states
-
-    full_dimension = max(product_to_dressed.values()) + 1
-    if qobj.shape[1] == 1:  # is ket
-        padded_vector = np.zeros((full_dimension, 1), dtype=complex)
-        padded_vector[indices_to_keep, :] = qobj.full()
-        return qutip.Qobj(padded_vector)
-    else:  # is operator or density matrix
-        padded_matrix = np.zeros((full_dimension, full_dimension), dtype=complex)
-        padded_matrix[np.ix_(indices_to_keep, indices_to_keep)] = qobj.full()
-        return qutip.Qobj(padded_matrix)
-    
-
-def test_truncate_and_pad_with_states():
-    # Define the mapping between product basis states and dressed states
-    product_to_dressed = {(0, 0): 0, 
-                            (1, 0): 1, 
-                            (0, 1): 2, 
-                            (1, 1): 3, 
-                            (2, 0): 4, 
-                            (0, 2): 5, 
-                            (1, 2): 6, 
-                            (2, 1): 7, 
-                            (2, 2): 8}
-
-    # Create an example qubit operator
-    qubit_operator = qutip.tensor(qutip.Qobj(np.array([
-        [0, 1, 2],
-        [3, 4, 5],
-        [6, 7, 8]
-    ])), qutip.identity(3))
-
-    # Truncate
-    truncated_qubit_operator = truncate_by_qubit_level_and_states(qubit_operator, max_qubit_level=2, truncated_dim=5, product_to_dressed=product_to_dressed)
-
-    # Pad back
-    padded_back_qubit_operator = pad_back_from_qubit_level_and_states(truncated_qubit_operator, max_qubit_level=2, truncated_dim=5, product_to_dressed=product_to_dressed)
-
-    # Check the validity of the truncation and padding operations
-    truncated_expected = np.array([
-        [0, 0, 0, 1, 0],
-        [0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 1],
-        [3, 0, 0, 4, 0],
-        [0, 0, 3, 0, 4]
-    ], dtype=complex)
-
-    assert np.allclose(truncated_qubit_operator.full(), truncated_expected), f"Truncated does not match: \n{truncated_qubit_operator.full()}"
-
-    padded_expected = np.array([
-        [0.+0.j, 0.+0.j, 0.+0.j, 1.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j],
-        [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j,0.+0.j],
-        [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 1.+0.j, 0.+0.j, 0.+0.j,0.+0.j],
-        [3.+0.j, 0.+0.j, 0.+0.j, 4.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j,0.+0.j],
-        [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j,0.+0.j],
-        [0.+0.j, 0.+0.j, 3.+0.j, 0.+0.j, 0.+0.j, 4.+0.j, 0.+0.j, 0.+0.j,0.+0.j],
-        [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j,0.+0.j],
-        [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j],
-        [0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j]], dtype=complex)
-
-    assert np.allclose(padded_back_qubit_operator.full(), padded_expected), f"Padded does not match:\n{padded_back_qubit_operator.full() == padded_expected}"
-
-# test_truncate_and_pad_with_states()
-
-
+############################################################################
+#
+#
+# Functions about manipulating qutip/scqubit objects
+#
+#
+############################################################################
 
 def truncate_custom(qobj: qutip.Qobj, products_to_keep: list, product_to_dressed: dict) -> qutip.Qobj:
     indices_to_keep = [dressed_level for (qubit_level, oscillator_level), dressed_level in product_to_dressed.items() if [qubit_level, oscillator_level] in products_to_keep]
@@ -284,9 +306,6 @@ def test_truncate_and_pad_custom():
 
     assert np.allclose(padded_back_qubit_operator.full(), padded_expected), f"Padded does not match:\n{padded_expected == padded_back_qubit_operator.full()}"
 
-# test_truncate_and_pad_custom()
-
-
 def generate_single_mapping(H_with_interaction_no_drive) -> np.ndarray:
     """
     Maps product of bare states to dressed state
@@ -326,236 +345,12 @@ def generate_single_mapping(H_with_interaction_no_drive) -> np.ndarray:
     return product_to_dressed
 
 
-from bidict import bidict
-def plot_specturum(qubit, resonator, hilbertspace, num_levels = 20,
-                    flagged_transitions = [[[0,0],[0,1]],[[1,0],[1,1]],[[2,0],[2,1]]]):
-    product_to_dressed = generate_single_mapping(hilbertspace.hamiltonian())
-    energy_text_size = 8
-    # clear_output(wait=True)
-    
-    fig, old_ax = qubit.plot_wavefunction(which = [0,1,2,3,4,5,6,7,8,9,10,11])
-    left, bottom, width, height = 1, 0, 1, 1  
-    ax = fig.add_axes([left, bottom, width, height])
-    fig.set_size_inches(8, 8)
+def transition_frequency(hilbertspace,s0: int, s1: int) -> float:
+    return (hilbertspace.energy_by_dressed_index(s1)- hilbertspace.energy_by_dressed_index(s0))
 
-    product_to_dressed = bidict(product_to_dressed)
-    qls = [product[0] for product in [product_to_dressed.inv[l] for l in range(num_levels)]]
-    rls = [product[1] for product in [product_to_dressed.inv[l] for l in range(num_levels)]]
-    max_qubit_level = max(qls) +1 
-    max_resonator_level = max(rls) +1
-    qubit_ori_energies = qubit.eigenvals(max_qubit_level)
-    resonator_ori_energies = resonator.eigenvals(max_resonator_level)
-
-    
-    max_rl_for_ql = [0] *3
-    for l in range(num_levels):
-        (ql,rl) = product_to_dressed.inv[l]
-        original = (qubit_ori_energies[ql] + resonator_ori_energies[rl])#* 2 * np.pi
-        x1,x2 = ql-0.25,ql+0.25
-        ax.plot([x1, x2], [original, original], linewidth=1, color='red')
-        ax.text(ql, original, f"{original:.3f}", fontsize=energy_text_size, ha='center', va='bottom')
-
-        dressed_state_index = product_to_dressed[(ql,rl)]
-        dressed = hilbertspace.energy_by_dressed_index(dressed_state_index)#* 2 * np.pi
-        ax.plot([x1, x2], [dressed, dressed], linewidth=1, color='green')
-        ax.text(ql, dressed, f"{dressed:.3f}", fontsize=energy_text_size, ha='center', va='top')
-
-        if ql in [0,1,2]:
-            if rl > max_rl_for_ql[ql]:
-                max_rl_for_ql[ql]=rl
-
-    flagged_transitions = []
-    for ql in [0,1,2]:
-        for i in range(max_rl_for_ql[ql] ):
-            flagged_transitions.append([[ql,i],[ql,i+1]])
-    for transition in flagged_transitions:
-        state1, state2 = transition[0],transition[1]
-        dressed_index1 = product_to_dressed[(state1[0],state1[1])]
-        dressed_index2 = product_to_dressed[(state2[0],state2[1])]
-        if dressed_index1!= None and dressed_index2!= None:
-            energy1 = hilbertspace.energy_by_dressed_index(dressed_index1)#* 2 * np.pi
-            energy2 = hilbertspace.energy_by_dressed_index(dressed_index2)#* 2 * np.pi
-            ax.plot([state1[0], max_qubit_level], [energy2, energy2], linewidth=1, color='green')
-            ax.plot([state1[0], state2[0]], [energy1, energy2], linewidth=1, color='green')
-            ax.text((state1[0]+ state2[0])/2, (energy1+ energy2)/2, f"{energy2-energy1:.3f}", fontsize=energy_text_size, ha='center', va='top')
-        else:
-            print("dressed_state_index contain None")
-    plt.show()
-
-def dressed_transition_frequency_over_2pi(hilbertspace,s0, s1) -> float:
-    return (hilbertspace.energy_by_dressed_index(s1) - hilbertspace.energy_by_dressed_index(s0))
-
-def replace_non_float64_with_none(lst):
-    for i in range(len(lst)):
-        if type(lst[i]) is not np.float64:
-            lst[i] = None
-    return lst
-
-
-def sweep_resonator_frequency_for_gf_ef_detunning(EJ=8.9,
-                                        EC=2.5,
-                                        EL=0.5,
-                                        flux = 0,
-                                        g_strength = 0.3):
-    # for erasure detection, we want g0g1 detunned from e0e1 and f0f1
-    # for measurement, we want one e0e1 detuned from the rest two.
-    E_vals = np.linspace(2, 20, 200)
-    g0g1_vals = []
-    e0e1_vals = []
-    f0f1_vals = []
-    h0h1_vals = []
-
-    qbt = scqubits.Fluxonium(
-            EJ=EJ,
-            EC=EC,
-            EL=EL,
-            flux=flux,
-            cutoff=30,
-            truncated_dim=6
-        )
-    num_done = 0
-    num_tot = len(E_vals)
-    for e in E_vals:
-        osc = scqubits.Oscillator(
-            E_osc=e,
-            truncated_dim=10
-        )
-        hilbertspace = scqubits.HilbertSpace([qbt, osc])
-        g_strength = 0.5
-        hilbertspace.add_interaction(
-            g_strength=g_strength,
-            op1=qbt.n_operator,
-            op2=osc.creation_operator,
-            add_hc=True
-        )
-        hilbertspace.generate_lookup()
-        product_to_dressed = generate_single_mapping(hilbertspace.hamiltonian())
-
-        g0g1 = dressed_transition_frequency_over_2pi(hilbertspace,product_to_dressed[(0,0)],product_to_dressed[(0,1)])
-        e0e1 = dressed_transition_frequency_over_2pi(hilbertspace,product_to_dressed[(1,0)],product_to_dressed[(1,1)])
-        f0f1 = dressed_transition_frequency_over_2pi(hilbertspace,product_to_dressed[(2,0)],product_to_dressed[(2,1)])
-        h0h1 = dressed_transition_frequency_over_2pi(hilbertspace,product_to_dressed[(3,0)],product_to_dressed[(3,1)])
-
-        g0g1_vals.append(g0g1)
-        e0e1_vals.append(e0e1)
-        f0f1_vals.append(f0f1)
-        h0h1_vals.append(h0h1)
-        g0g1_vals = replace_non_float64_with_none(g0g1_vals)
-        e0e1_vals = replace_non_float64_with_none(e0e1_vals)
-        f0f1_vals = replace_non_float64_with_none(f0f1_vals)
-        h0h1_vals = replace_non_float64_with_none(h0h1_vals)
-        num_done+=1
-        if num_done%10 == 0:
-            clear_output()
-            print(f"done:{num_done}/{num_tot}")
-    chi_fg_MHz = []
-    for a, b in zip(f0f1_vals, g0g1_vals):
-        if a is None or b is None:
-            chi_fg_MHz.append(None)
-        else:
-            chi_fg_MHz.append((a - b)*1000)
-    chi_fe_MHz = []
-    for a, b in zip(f0f1_vals, e0e1_vals):
-        if a is None or b is None:
-            chi_fe_MHz.append(None)
-        else:
-            chi_fe_MHz.append((a - b)*1000)
-
-    plt.plot(E_vals, chi_fg_MHz, label=r'$\chi_{\mathrm{fg}}$')
-    plt.plot(E_vals, chi_fe_MHz, label=r'$\chi_{\mathrm{fe}}$')
-    plt.yscale('symlog')
-    plt.legend()
-    plt.gca().yaxis.grid(True)
-    plt.gca().xaxis.grid(True)
-    plt.xlabel("resonator frequency (GHz)")
-    plt.ylabel("detunning (MHz)")
-    plt.show()
-
-
-def sweep_resonator_frequency_for_ge_gf_gh_detunning(EJ=8.9,
-                                        EC=2.5,
-                                        EL=0.5,
-                                        flux = 0,
-                                        g_strength = 0.3,
-                                        osc_w_min = 2,
-                                        osc_w_max = 10):
-
-    E_vals = np.linspace(osc_w_min, osc_w_max, 200)
-    transition_name_to_data = {}
-    def add_transition_to_list(name:str,hilbertspace,product_to_dressed,product_state1,product_state2):
-        freq = abs(dressed_transition_frequency_over_2pi(hilbertspace,product_to_dressed[product_state1],product_to_dressed[product_state2]))
-        if type(freq) is not np.float64:
-            freq = None
-        transition_name_to_data.setdefault(name, []).append(freq)
-
-    qubit_levels = 6
-    qbt = scqubits.Fluxonium(
-            EJ=EJ,
-            EC=EC,
-            EL=EL,
-            flux=flux,
-            cutoff=30,
-            truncated_dim=qubit_levels
-        )
-    num_done = 0
-    num_tot = len(E_vals)
-    ql_names= ['g','e','f','h','i','j']
-    for e in E_vals:
-        osc = scqubits.Oscillator(E_osc=e, truncated_dim=20)
-        hilbertspace = scqubits.HilbertSpace([qbt, osc])
-        hilbertspace.add_interaction(g_strength=g_strength,op1=qbt.n_operator,op2=osc.creation_operator,add_hc=True)
-        hilbertspace.generate_lookup()
-        product_to_dressed = generate_single_mapping(hilbertspace.hamiltonian())
-
-        # Oscillator transition
-        for ql in [0,1,2,3]:
-            add_transition_to_list(name = f"{ql_names[ql]}0{ql_names[ql]}1",
-                                hilbertspace = hilbertspace,
-                                product_to_dressed=product_to_dressed,
-                                product_state1 = (ql,0),
-                                product_state2= (ql,1))
-        # Qubit transition
-        for q1 in range(qubit_levels-1):
-            for q2 in range(q1+1,qubit_levels):
-                if q1 in [0,1,2] or q2 in [0,1,2]: # Only plot qubit transitions that's to or from g/e/f
-                    add_transition_to_list(name = f"{ql_names[q1]}{ql_names[q2]}",
-                                hilbertspace = hilbertspace,
-                                product_to_dressed=product_to_dressed,
-                                product_state1 = (q1,0),
-                                product_state2= (q2,0))
-
-        num_done+=1
-        if num_done%10 == 0:
-            clear_output()
-            print(f"done:{num_done}/{num_tot}")
-
-    # Loop over all transitions in the dictionary
-    for name, freq_list in transition_name_to_data.items():
-        if name == "g0g1":
-            continue
-        
-        detunning = []
-        for a, b in zip(freq_list, transition_name_to_data["g0g1"]):
-            if a is None or b is None:
-                detunning.append(None)
-            else:
-                detunning.append((a - b)*1000)
-        if name in ["e0e1","f0f1","h0h1"]:# Thick line
-            plt.plot(E_vals, detunning, label=r'$\chi_{\mathrm{'+f'{name}'+'-g0g1}}$')
-        else:# Thin line
-            plt.plot(E_vals, detunning, label=r'$\chi_{\mathrm{'+f'{name}'+'-g0g1}}$', linewidth=1, alpha=0.5)
-    plt.yscale('symlog')
-    plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-    plt.gca().yaxis.grid(True)
-    plt.gca().xaxis.grid(True)
-    plt.xlabel("resonator frequency (GHz)")
-    plt.ylabel("detunning (MHz)")
-    plt.tight_layout()
-    plt.show()
-
-
-# In case alpha oscillates not at drive frequency 
 def find_dominant_frequency(expectation,tlist,dominant_frequency_already_found = None,plot = False):
+    # In case alpha oscillates not at drive frequency, we do fourier transform to make the plot of coherent state look better 
+
     if dominant_frequency_already_found != None:
         expectation = expectation * np.exp(-1j*2*np.pi*dominant_frequency_already_found*tlist)
 
@@ -582,348 +377,48 @@ def find_dominant_frequency(expectation,tlist,dominant_frequency_already_found =
     else:
         return dominant_freq
 
-def transition_frequency(hilbertspace,s0: int, s1: int) -> float:
-    return (hilbertspace.energy_by_dressed_index(s1)- hilbertspace.energy_by_dressed_index(s0))
 
 
+def dressed_to_2_level_dm(dressed_dm,product_to_dressed, qubit_level, osc_level,computational_0,computational_1,products_to_keep=None):
+    dressed_dm_data = pad_back_custom(dressed_dm, products_to_keep, product_to_dressed)
+    dressed_dm_data = dressed_dm_data.full()
+    rho_product = np.zeros((qubit_level * osc_level, qubit_level * osc_level), dtype=complex)
+    for (ql, ol), dressed_level in product_to_dressed.items():
+        index1 = ql * osc_level + ol
+        # Loop again to populate the density matrix
+        for (ql2, ol2), dressed_level2 in product_to_dressed.items():
+            index2 = ql2 * osc_level + ol2
+            # TODO  the order of product_state and product_state2 doesn't make sense to me, but it produces the right result. :(
+            element = dressed_dm_data[dressed_level, dressed_level2]
+            rho_product[index1, index2] += element
+    rho_product = qutip.Qobj(rho_product, dims=[[qubit_level, osc_level], [qubit_level, osc_level]])
+    qubit_rho = rho_product.ptrace(0)
 
-class CustomOdeResult:
-    def __init__(self, times = [], states=[]):
-        self.times = times
-        self.states = states
+    rho_2_level = qutip.Qobj(np.array([
+            [qubit_rho[computational_0, computational_0],qubit_rho[computational_0, computational_1]],
+            [qubit_rho[computational_1, computational_0],qubit_rho[computational_1, computational_1]]
+        ]),dims=[[2],[2]])
 
-def solve_with_mesolve(H,state0,tlist,options = None,c_ops = None):
-    return qutip.mesolve(
-        H = H,
-        rho0=  state0,
-        tlist = tlist,
-        options=options,
-        progress_bar = True,
-        c_ops= c_ops
-    )
-
-
-
-
-def solve_with_mcsolve(H,state0,tlist,options = None,c_ops = None,ntraj= 50):
-    # Also does averaging so it returns a result in the same form as mesolve with c_ops
-    result =  qutip.mcsolve(
-        H = H,
-        psi0 = state0,
-        tlist = tlist,
-        options=options,
-        progress_bar = True,
-        c_ops= c_ops,
-        ntraj= 50
-    )
-    # Convert states to density matrices and sum them up
-    states_array = np.array([[state.full() for state in traj] for traj in result.states])
-    summed_dm_array = np.einsum('ntrc,ntij->tri', states_array, states_array.conj()) 
-    summed_dm_array /= result.ntraj
+    return rho_2_level
     
-    # Convert the final averaged density matrices back to Qobj
-    averaged_dms = [qutip.Qobj(dm) for dm in summed_dm_array]
-
-    result.states = averaged_dms
-    return result
-
-
-
-
-
-def pack_mcsolve_chunks(H,
-                        psi0,
-                        tlist,
-                        c_ops,
-                        e_ops,
-                        ntraj = 500,
-                        existing_chunk_num: int = 0,
-                        keep_dms = False,
-                        chunk_size = 4):
-    # Pack chunks that can be sent to htc_condor
-
-    seeds = list(np.random.randint(0, 2**32,
-                        size=ntraj,
-                        dtype=np.uint32))
-
-    chunk_id = existing_chunk_num
-    # Pack problems
-    for i in range(0, ntraj, chunk_size):
-        chunk_seeds = seeds[i:i + chunk_size]
-        problem = packed_mcsolve_problem(
-            H=H,
-            psi0=psi0,
-            tlist=tlist,
-            chunk_seeds=chunk_seeds,
-            c_ops=c_ops,
-            e_ops = e_ops,
-            keep_dms = keep_dms
-        )
-
-        with open(f"{chunk_id}.pkl", "wb") as f:
-            pickle.dump(problem, f)
-        chunk_id += 1
-    existing_chunk_num = chunk_id
-    return existing_chunk_num
-
-
-def pack_pkl_files_to_zip(zip_filename="mcsolve_input.zip"):
-    # Create a new ZIP file
-    with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        # Loop through all files in the current directory
-        for filename in os.listdir('.'):
-            # Check if the file is a .pkl file with an integer name
-            name, ext = os.path.splitext(filename)
-            if ext == '.pkl' and name.isdigit():
-                # Add the file to the ZIP
-                zipf.write(filename)
-                # Delete the .pkl file
-                os.remove(filename)
-
-
-def merge_results(zip_files):
-    # Used to merge mcsolve results on HTC condor
-    num_total_states = 0
-    averaged_dm_array = None
-    tlist = None
-
-    num_files_tot = len(zip_files)
-    num_files_done = 0
-
-    for zip_file in zip_files:
-        if not os.path.exists(zip_file):
-            print(f"File {zip_file} does not exist. Skipping...")
-            continue
-
-        with gzip.GzipFile(zip_file, "rb") as f:
-            result = pickle.load(f)
-
-        if tlist is None:
-            tlist = result.times
-
-        num_new_states = len(result.seeds)
-        num_total_states += num_new_states
-
-        # Convert states to density matrices and sum them up
-        states_array = np.array([[state.full() for state in traj] for traj in result.states])
-        summed_dm_array = np.einsum('ntrc,ntij->tri', states_array, states_array.conj()) 
-        if averaged_dm_array is None:
-            averaged_dm_array = summed_dm_array
-        else:
-            averaged_dm_array += summed_dm_array
-
-        num_files_done += 1
-        clear_output()
-        print(f"done:{num_files_done}/{num_files_tot}")
-    averaged_dm_array /= num_total_states
+def compute_and_store_2_level_dm(args):
+    results,file_name, i, j, product_to_dressed, qubit_level, osc_level,computational_0, computational_1,products_to_keep  = args
     
-    # Convert the final averaged density matrices back to Qobj
-    averaged_dms = [qutip.Qobj(dm) for dm in averaged_dm_array]
-
-    final_result = qutip.solver.Result()
-    final_result.states = averaged_dms
-    final_result.times = tlist
-
-    return final_result
-
-
-def merge_results_and_slice(zip_files):
-    # Used to merge mcsolve results on HTC condor
-    num_total_states = 0
-    averaged_dm_array = None
-    tlist = None
-
-    num_files_tot = len(zip_files)
-    num_files_done = 0
-
-    for zip_file in zip_files:
-        if not os.path.exists(zip_file):
-            print(f"File {zip_file} does not exist. Skipping...")
-            continue
-
-        with gzip.GzipFile(zip_file, "rb") as f:
-            result = pickle.load(f)
-
-        if tlist is None:
-            tlist = result.times[::8]
-
-        num_new_states = len(result.seeds)
-        num_total_states += num_new_states
-
-        # Convert states to density matrices and sum them up
-        states_array = np.array([[state.full() for state in traj] for traj in result.states[::8]])
-        summed_dm_array = np.einsum('ntrc,ntij->tri', states_array, states_array.conj()) 
-        if averaged_dm_array is None:
-            averaged_dm_array = summed_dm_array
-        else:
-            averaged_dm_array += summed_dm_array
-
-        num_files_done += 1
-        clear_output()
-        print(f"done:{num_files_done}/{num_files_tot}")
-    averaged_dm_array /= num_total_states
+    rho_2_level = dressed_to_2_level_dm(results[i].states[j], product_to_dressed, qubit_level, osc_level, computational_0, computational_1,products_to_keep)
     
-    # Convert the final averaged density matrices back to Qobj
-    averaged_dms = [qutip.Qobj(dm) for dm in averaged_dm_array]
-
-    final_result = qutip.solver.Result()
-    final_result.states = averaged_dms
-    final_result.times = tlist
-
-    return final_result
-
-
-def aggregate_results(num_chunks):
-    # Used for time chunks in GPU solver
-    aggregated_states = []
-    aggregated_seeds = []
-
-    for idx in range(num_chunks):
-        with open(f"result_{idx}.pkl", "rb") as f:
-            chunk_result = pickle.load(f)
-        aggregated_states.extend(chunk_result.states)
-        aggregated_seeds.extend(chunk_result.seeds)
-
-    aggregated_result = qutip.solver.Result()
-    aggregated_result.states = aggregated_states
-    aggregated_result.seeds = aggregated_seeds
-
-    return aggregated_result
+    with open(file_name, 'wb') as f:
+        pickle.dump(rho_2_level, f)
 
 
 
+############################################################################
+#
+#
+# Functions about visualizing data or results
+#
+#
+############################################################################
 
-
-
-
-def solve_with_jax_ode_in_chunks(ham_solver, rho0, tot_time, square, num_chunks = 50, num_points_per_chunk = 2):
-    pass
-
-
-def solve_with_jax_gpu(ham_solver, y0, tlist, signals, max_dt=1, chunk_size=10):
-    tlist_chunks = []
-    for i in range(0, len(tlist) - 1, chunk_size - 1):
-        chunk = tlist[i:i + chunk_size]
-        tlist_chunks.append(chunk)
-
-    current_state = y0
-    chunk_results = []
-
-    for i, chunk in enumerate(tlist_chunks):
-        result = ham_solver.solve(
-            y0=current_state,
-            t_span=[chunk[0], chunk[-1]],
-            signals=signals,
-            method='jax_expm_parallel',
-            t_eval=jnp.linspace(chunk[0], chunk[-1], len(chunk)),
-            max_dt=max_dt
-        )
-
-        # Append the result, excluding the overlapping state if not the first chunk
-        if i == 0:
-            chunk_results.extend(result.y)
-        else:
-            chunk_results.extend(result.y[1:])
-
-        current_state = result.y[-1]
-        clear_output(wait=True)
-        print(f"Progress: Chunk {i + 1}/{len(tlist_chunks)} solved.")
-
-    ode_result = CustomOdeResult(times=tlist, states=chunk_results)
-    return ode_result
-
-def solve_with_jax_gpu_lindbladian(ham_solver, y0, tlist, signals, max_dt=1, chunk_size=10):
-    ham_solver.model.evaluation_mode = "dense_vectorized"
-    if y0.shape[0] != ham_solver.model.dim**2:
-        y0 = y0 @ y0.conj().T
-        y0 = y0.flatten(order='F')
-
-    ode_result = CustomOdeResult()
-    if chunk_size >= 1:
-        ode_result =  solve_with_jax_gpu(ham_solver, y0, tlist, signals, max_dt, chunk_size)
-
-    else:
-        current_state = y0
-        chunk_results = []
-        t_results = []
-        total_time = tlist[-1] - tlist[0]
-        num_intervals = int(len(tlist) / chunk_size)
-        interval_length = total_time / num_intervals
-
-        for i in range(num_intervals):
-            t_start = tlist[0] + i * interval_length
-            t_end = t_start + interval_length
-            t_eval_interval = jnp.array([t_end])
-
-            result = ham_solver.solve(
-                y0=current_state,
-                t_span=[t_start, t_end],
-                signals=signals,
-                method='jax_expm_parallel',
-                t_eval=t_eval_interval,
-                max_dt=max_dt
-            )
-
-            chunk_results.append(result.y[-1])
-            t_results.append(t_eval_interval[-1])
-
-            current_state = result.y[-1]
-            clear_output(wait=True)
-            print(f"Progress: Interval {i + 1}/{num_intervals} solved.")
-        ode_result = CustomOdeResult(t_results, chunk_results)
-    
-    return ode_result
-
-
-
-def print_heatmap(index ):
-    psi = results[0].states[index]
-    # # Initialize the heatmap matrix
-    n_qubit_states = 8  # Replace with the number of qubit states
-    n_resonator_states = 50  # Replace with the number of resonator states
-    heatmap = np.zeros((n_qubit_states, n_resonator_states))
-
-    # # Define your operator for the dressed state
-    # # operator_dressed = ...
-
-    # Loop over product states
-    for i in range(n_qubit_states):
-        for j in range(n_resonator_states):
-            # Convert to dressed index using the dictionary
-            dressed_index = product_to_dressed.get((i, j), None)
-            if dressed_index is not None:
-                dressed_ket = qutip.basis(400,dressed_index)
-                dressed_operator = qutip.ket2dm(dressed_ket)
-                
-                # Calculate the expectation value
-                exp_val = expect(dressed_operator, psi)
-                
-                # Update the heatmap
-                heatmap[i, j] = exp_val
-    
-    # Plot the heatmap
-    plt.imshow(heatmap, cmap='hot', interpolation='nearest')
-    plt.colorbar(label='Expectation Value')
-    plt.xlabel('Resonator State')
-    plt.ylabel('Qubit State')
-    plt.show()
-
-    print(sum([heatmap[i,j] for i in range(8) for j in range(50)]))
-
-
-def do_product_state_heatmap():
-    # Create a slider widget for index
-    index_slider = widgets.IntSlider(
-        value=0,
-        min=0,
-        max=399,
-        step=1,
-        description='Index:',
-        continuous_update=False
-    )
-
-    # Display the widget and link it to the function
-    widgets.interactive(print_heatmap, index=index_slider)
 
 
 
@@ -1041,6 +536,60 @@ def plot_population(results,qubit_level,osc_level,product_to_dressed,a,w_d,tlist
     plt.show()
 
 
+def plot_specturum(qubit, resonator, hilbertspace, num_levels = 20,
+                    flagged_transitions = [[[0,0],[0,1]],[[1,0],[1,1]],[[2,0],[2,1]]]):
+    product_to_dressed = generate_single_mapping(hilbertspace.hamiltonian())
+    energy_text_size = 8
+    # clear_output(wait=True)
+    
+    fig, old_ax = qubit.plot_wavefunction(which = [0,1,2,3,4,5,6,7,8,9,10,11])
+    left, bottom, width, height = 1, 0, 1, 1  
+    ax = fig.add_axes([left, bottom, width, height])
+    fig.set_size_inches(8, 8)
+
+    product_to_dressed = bidict(product_to_dressed)
+    qls = [product[0] for product in [product_to_dressed.inv[l] for l in range(num_levels)]]
+    rls = [product[1] for product in [product_to_dressed.inv[l] for l in range(num_levels)]]
+    max_qubit_level = max(qls) +1 
+    max_resonator_level = max(rls) +1
+    qubit_ori_energies = qubit.eigenvals(max_qubit_level)
+    resonator_ori_energies = resonator.eigenvals(max_resonator_level)
+
+    
+    max_rl_for_ql = [0] *3
+    for l in range(num_levels):
+        (ql,rl) = product_to_dressed.inv[l]
+        original = (qubit_ori_energies[ql] + resonator_ori_energies[rl])#* 2 * np.pi
+        x1,x2 = ql-0.25,ql+0.25
+        ax.plot([x1, x2], [original, original], linewidth=1, color='red')
+        ax.text(ql, original, f"{original:.3f}", fontsize=energy_text_size, ha='center', va='bottom')
+
+        dressed_state_index = product_to_dressed[(ql,rl)]
+        dressed = hilbertspace.energy_by_dressed_index(dressed_state_index)#* 2 * np.pi
+        ax.plot([x1, x2], [dressed, dressed], linewidth=1, color='green')
+        ax.text(ql, dressed, f"{dressed:.3f}", fontsize=energy_text_size, ha='center', va='top')
+
+        if ql in [0,1,2]:
+            if rl > max_rl_for_ql[ql]:
+                max_rl_for_ql[ql]=rl
+
+    flagged_transitions = []
+    for ql in [0,1,2]:
+        for i in range(max_rl_for_ql[ql] ):
+            flagged_transitions.append([[ql,i],[ql,i+1]])
+    for transition in flagged_transitions:
+        state1, state2 = transition[0],transition[1]
+        dressed_index1 = product_to_dressed[(state1[0],state1[1])]
+        dressed_index2 = product_to_dressed[(state2[0],state2[1])]
+        if dressed_index1!= None and dressed_index2!= None:
+            energy1 = hilbertspace.energy_by_dressed_index(dressed_index1)#* 2 * np.pi
+            energy2 = hilbertspace.energy_by_dressed_index(dressed_index2)#* 2 * np.pi
+            ax.plot([state1[0], max_qubit_level], [energy2, energy2], linewidth=1, color='green')
+            ax.plot([state1[0], state2[0]], [energy1, energy2], linewidth=1, color='green')
+            ax.text((state1[0]+ state2[0])/2, (energy1+ energy2)/2, f"{energy2-energy1:.3f}", fontsize=energy_text_size, ha='center', va='top')
+        else:
+            print("dressed_state_index contain None")
+    plt.show()
 
 def plot_heatmap(result, time_index, product_to_dressed, qubit_levels, oscillator_levels):
     if hasattr(result, 'states'):
@@ -1048,26 +597,23 @@ def plot_heatmap(result, time_index, product_to_dressed, qubit_levels, oscillato
     elif hasattr(result, 'y'):
         dm = result.y[time_index]
 
-    grid = np.zeros((qubit_levels, oscillator_levels))
+    # dm = pad_back_function(dm)
+    grid = np.zeros(( qubit_levels,oscillator_levels))
 
     for qubit_level in range(qubit_levels):
         for oscillator_level in range(oscillator_levels):
             product_state = (qubit_level, oscillator_level)
             dressed_state = product_to_dressed[product_state]
-            if dressed_state <= dm.dims[0][0]:
+            if dressed_state < dm.dims[0][0]:
                 # Create a basis state corresponding to the dressed state
-                try:
-                    basis_state = qutip.basis(dm.dims[0][0], dressed_state)
-                except:
-                    print(dm.dims[0][0])
-                    print(dressed_state)
+                basis_state = qutip.basis(dm.dims[0][0], dressed_state)
                 # Calculate the expectation value
                 expectation_value = qutip.expect(basis_state * basis_state.dag(), dm)
             else:
                 expectation_value = 0
-            grid[qubit_level, oscillator_level] = expectation_value
-
-    plt.imshow(grid, cmap='viridis', origin='lower')
+            grid[ qubit_level,oscillator_level] = expectation_value
+    grid[grid < 1e-5] = 1e-5
+    plt.imshow(grid, cmap='viridis', origin='lower', norm=LogNorm(vmax=1,vmin=1e-5))
     plt.colorbar(label='Expectation Value')
     plt.xlabel('Oscillator Level')
     plt.ylabel('Qubit Level')
@@ -1090,107 +636,3 @@ def interactive_heatmap(result, product_to_dressed, qubit_levels, oscillator_lev
     
     widgets.interact(lambda time_index: plot_heatmap(result, time_index, product_to_dressed, qubit_levels, oscillator_levels),
                      time_index=time_slider)
-
-
-def dressed_to_2_level_dm(dressed_dm,product_to_dressed, qubit_level, osc_level,computational_0,computational_1,products_to_keep=None):
-    dressed_dm_data = pad_back_custom(dressed_dm, products_to_keep, product_to_dressed)
-    dressed_dm_data = dressed_dm_data.full()
-    rho_product = np.zeros((qubit_level * osc_level, qubit_level * osc_level), dtype=complex)
-    for (ql, ol), dressed_level in product_to_dressed.items():
-        index1 = ql * osc_level + ol
-        # Loop again to populate the density matrix
-        for (ql2, ol2), dressed_level2 in product_to_dressed.items():
-            index2 = ql2 * osc_level + ol2
-
-            # TODO  the order of product_state and product_state2 is probably wrong, but it produces the right result. :(
-            element = dressed_dm_data[dressed_level, dressed_level2]
-            rho_product[index1, index2] += element
-    rho_product = qutip.Qobj(rho_product, dims=[[qubit_level, osc_level], [qubit_level, osc_level]])
-    qubit_rho = rho_product.ptrace(0)
-
-    rho_2_level = qutip.Qobj(np.array([
-            [qubit_rho[computational_0, computational_0],qubit_rho[computational_0, computational_1]],
-            [qubit_rho[computational_1, computational_0],qubit_rho[computational_1, computational_1]]
-        ]),dims=[[2],[2]])
-
-    return rho_2_level
-    
-def compute_and_store_2_level_dm(args):
-    results,file_name, i, j, product_to_dressed, qubit_level, osc_level,computational_0, computational_1,products_to_keep  = args
-    
-    rho_2_level = dressed_to_2_level_dm(results[i].states[j], product_to_dressed, qubit_level, osc_level, computational_0, computational_1,products_to_keep)
-    
-    with open(file_name, 'wb') as f:
-        pickle.dump(rho_2_level, f)
-
-
-
-from tqdm.notebook import tqdm
-
-
-
-
-
-def get_shift(ele,Delta_ij):
-    return abs(ele)**2 / Delta_ij
-
-
-def sweep_Er(EJ,EC,EL,Er_list,qls = [0,1,2,3],symlog = True,g=0.1):
-    qubit_level = 30
-    qbt = scqubits.Fluxonium(EJ=EJ,EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
-    
-    num_evals = 20
-    evals = qbt.eigenvals(num_evals)
-    print(f"computational freq {evals[2]-evals[1]}")
-    elements = qbt.matrixelement_table('n_operator',evals_count = num_evals)
-
-    y_max = 10
-    y_min = -10
-    plt.figure(figsize=[10,4])
-    for ql in qls:
-        shift_from_qubit_transition = []
-        for n, Er in enumerate(tqdm(Er_list, desc = "Er loop")):
-            shifts = [get_shift(elements[ql,ql2],evals[ql2]-evals[ql]-Er) for ql2 in range(num_evals)] 
-            if not symlog:
-                shift_from_qubit_transition.append(abs(sum(shifts)))
-            else:
-                shift_from_qubit_transition.append(sum(shifts))
-        plt.plot(Er_list, shift_from_qubit_transition, label=f'shift from transition from {ql}')
-
-        # Plot the label of transition on the tip of poles
-        for ql2 in range(ql+1,12):
-            transition =  abs(evals[ql2]-evals[ql])
-            if abs(elements[ql,ql2]) > 1e-5 and transition < Er_list[-1] and transition > Er_list[0]:
-                Er_index = find_closest_using_numpy(Er_list, transition)
-                y_pos = shift_from_qubit_transition[Er_index]
-                y_pos = min(y_pos, y_max)
-                y_pos = max(y_pos, y_min)
-                plt.text(transition, y_pos, f'{ql}-{ql2}', fontsize=8, ha='center', va='bottom')
-
-    plt.grid(which='major', linestyle='-', linewidth='0.5', color='black')
-    plt.minorticks_on()
-    plt.grid(which='minor', linestyle='--', linewidth='0.5', color='gray')
-    plt.xlim(Er_list[0],Er_list[-1])
-    if not symlog:
-        plt.yscale('log')
-        plt.ylim(1e-2,y_max)
-    else:
-        plt.yscale('symlog', linthresh=1e-2,linscale=0.1)
-        plt.ylim(y_min,y_max)
-    
-    plt.xlabel('Er-values')
-    plt.ylabel('sum of shift from relavent transitions')
-    plt.title('qubit-state-dependent shift on oscillator frequency, \n with poles corresponding to matrix element > 1e-5 marked')
-    plt.legend()
-    plt.show()
-
-
-##########################################
-# Utilities for utilities
-##########################################
-
-def find_closest_using_numpy(l, f):
-    arr = np.array(l)
-    idx = np.searchsorted(arr, f, side='left')
-    idx = np.clip(idx, 1, len(arr) - 1)
-    return idx - 1 if abs(arr[idx - 1] - f) <= abs(arr[idx] - f) else idx

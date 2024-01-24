@@ -17,3 +17,7 @@ integer flux point fluxonium/paper/mcsolve_tomo_results_kappa1e-3.pkl
 integer flux point fluxonium/paper/mcsolve_tomo_results_kappa1e-3_15levels.pkl
 integer flux point fluxonium/paper/mcsolve_tomo_results_kappa2e-3.pkl
 integer flux point fluxonium/paper/mcsolve_tomo_results_kappa5e-3.pkl
+*.pkl
+*.pkl
+*.pkl
+*.pkl
