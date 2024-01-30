@@ -228,8 +228,10 @@ def mesolve_and_pad(rho0,
 
 def truncate_custom(qobj: qutip.Qobj, products_to_keep: list, product_to_dressed: dict) -> qutip.Qobj:
     indices_to_keep = [dressed_level for (qubit_level, oscillator_level), dressed_level in product_to_dressed.items() if [qubit_level, oscillator_level] in products_to_keep]
-    indices_to_keep.sort()
-
+    try:
+        indices_to_keep.sort()
+    except:
+        print(indices_to_keep)
     if qobj.shape[1] == 1:  # is ket
         truncated_vector = qobj.full()[indices_to_keep, :]
         return qutip.Qobj(truncated_vector)
