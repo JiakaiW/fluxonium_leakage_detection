@@ -651,197 +651,23 @@ def interactive_heatmap(result, product_to_dressed, qubit_levels, oscillator_lev
 
 
 
-
-
-def get_shift(ele,Delta_ij):
-    return abs(ele)**2 / Delta_ij
-
-
-def plot(EJ_values, 
-         Er_values,
-         EC,
-         EL,
-         legend = False,    
-        norm1= LogNorm(vmin=1e-5,vmax=1e-4),
-         norm2 = LogNorm(vmin=1e-2,vmax=1),
-         big_pic = False,
-         computational_state = [0,1],
-         leakage_state = [2],
-    ):
-
-    qubit_level = 25
-    
-    X, Y = np.meshgrid(EJ_values, Er_values)
-    Z1 = np.zeros_like(X)
-    Z2 = np.zeros_like(X)
-
-    highest_level_to_transition_from = 16
-    transitions_to_0 = [[] for _ in range(highest_level_to_transition_from)]
-    transitions_to_1 = [[] for _ in range(highest_level_to_transition_from)]
-    transitions_to_2 = [[] for _ in range(highest_level_to_transition_from)]
-
-    for i in tqdm(range(len(EJ_values)), desc="sweeping"):
-        qbt = scqubits.Fluxonium(EJ=EJ_values[i],EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
-        num_evals = qubit_level
-        evals = qbt.eigenvals(num_evals)
-        elements = qbt.matrixelement_table('n_operator',evals_count = num_evals)
-        
-        for l in range(highest_level_to_transition_from):
-            transitions_to_0[l].append(evals[l]-evals[0])
-            transitions_to_1[l].append(evals[l]-evals[1])
-            transitions_to_2[l].append(evals[l]-evals[2])
-
-
-        for j in range(len(Er_values)):
-            Er = Er_values[j]
-            shifts = [
-                sum([get_shift(elements[0,ql2],evals[ql2]-evals[0]-Er) for ql2 in range(num_evals)] ),
-                sum([get_shift(elements[1,ql2],evals[ql2]-evals[1]-Er) for ql2 in range(num_evals)]),
-                sum([get_shift(elements[2,ql2],evals[ql2]-evals[2]-Er) for ql2 in range(num_evals)] )
-            ]
-
-            Z1[j, i] = abs(shifts[computational_state[1]]-shifts[computational_state[0]])
-            Z2[j, i] = abs(shifts[leakage_state]-shifts[computational_state[1]])
-
-    # Plotting
-    if not big_pic:
-        fig = plt.figure(figsize=(2*(3+3/8), 
-                            (3+3/8)/1.8))
-    else:
-        fig = plt.figure(figsize=(2*(3+3/8)*3, 
-                            (3+3/8)/1.8*3))
-    gs = gridspec.GridSpec(1, 3, width_ratios=[1.2, 1.2, 1], wspace=0.4)
-
-    # ax1 = plt.subplot(gs[0])
-    # plt.text(-0.25, 1, '(a)', transform=plt.gca().transAxes, fontsize=12, fontweight='bold', va='top', color='black')
-    # plt.plot(EJ_values, transition_21, '-', linewidth=2,color = 'black')
-    # plt.xlabel('EJ')
-    # plt.ylabel(r'$\omega_{12}$')
-    
-
-    ################################################################################
-    # Heatmap about the diff of shift from 0 and shift from 1
-    ################################################################################
-    ax0 = plt.subplot(gs[0])
-    plt.text(0.05, 1, '(a)', transform=plt.gca().transAxes, fontsize=12, fontweight='bold', va='top', color='black')
-    z1_plot = plt.pcolormesh(X, Y, Z1, shading='auto', cmap='inferno', norm=norm1)
-    plt.colorbar(z1_plot)
-    line_styles = ['-', '--', '-.', ':']
-    next_line_style_idx = 0
-
-    for level, list_of_transitions in enumerate(transitions_to_0):
-        if level % 2 == 1 and np.max(list_of_transitions) > Er_values[0] and np.min(list_of_transitions) < Er_values[-1]:
-            plt.plot(EJ_values, list_of_transitions, line_styles[next_line_style_idx], linewidth=2,color = 'black',label = rf'$\omega_{{0,{level}}}$')
-            next_line_style_idx += 1
-            next_line_style_idx = next_line_style_idx % len(line_styles)
-
-    for level, list_of_transitions in enumerate(transitions_to_1):
-        if level % 2 == 0 and np.max(list_of_transitions) > Er_values[0] and np.min(list_of_transitions) < Er_values[-1]:
-            plt.plot(EJ_values, list_of_transitions, line_styles[next_line_style_idx], linewidth=2,color = 'black',label = rf'$\omega_{{1,{level}}}$')
-            next_line_style_idx += 1
-            next_line_style_idx = next_line_style_idx % len(line_styles)
-
-    if legend:
-        plt.legend(loc='lower left')
-    plt.xlabel('EJ')
-    plt.ylabel('Er')
-    ax0.set_xlim([EJ_values[0], EJ_values[-1]])
-    ax0.set_ylim([Er_values[0], Er_values[-1]])
-    ax0.grid(which='major', color='grey', linestyle='-', linewidth=0.5)
-    ax0.minorticks_on()
-    ax0.grid(which='minor', color='grey', linestyle=':', linewidth=0.5)
-
-
-
-    ################################################################################
-    # Heatmap about the diff of shift from 0 and shift from 2
-    ################################################################################
-    ax1 = plt.subplot(gs[1])
-    plt.text(0.05, 1, '(b)', transform=plt.gca().transAxes, fontsize=12, fontweight='bold', va='top', color='black')
-    z2_plot = plt.pcolormesh(X, Y, Z2, shading='auto', cmap='inferno', norm=norm2)
-    plt.colorbar(z2_plot)
-
-    for level, list_of_transitions in enumerate(transitions_to_2):
-        if level % 2 == 1 and np.max(list_of_transitions) > Er_values[0] and np.min(list_of_transitions) < Er_values[-1]:
-            plt.plot(EJ_values, list_of_transitions, line_styles[next_line_style_idx], linewidth=2,color = 'black',label = rf'$\omega_{{2,{level}}}$')
-            next_line_style_idx += 1
-            next_line_style_idx = next_line_style_idx % len(line_styles)
-
-    if legend:
-        plt.legend(loc='lower left')
-    plt.xlabel('EJ')
-    # plt.ylabel('Er')
-    ax1.set_xlim([EJ_values[0], EJ_values[-1]])
-    ax1.set_ylim([Er_values[0], Er_values[-1]])
-    ax1.grid(which='major', color='grey', linestyle='-', linewidth=0.5)
-    ax1.minorticks_on()
-    ax1.grid(which='minor', color='grey', linestyle=':', linewidth=0.5)
-    # ax3.set_xticks([]) 
-    # ax3.set_yticks([])
-
-
-    ################################################################################
-    # Additional subplot for overlay
-    ################################################################################
-    ax2 = plt.subplot(gs[2])
-    plt.text(0.05, 1, '(c)', transform=plt.gca().transAxes, fontsize=12, fontweight='bold', va='top', color='black')
-    # Overlay of Z1 and Z2
-    plt.pcolormesh(X, Y, Z1, shading='auto', cmap='inferno', alpha=0.5, norm=norm1)
-    plt.pcolormesh(X, Y, Z2, shading='auto', cmap='inferno', alpha=0.5, norm=norm2)
-    next_line_style_idx = 0
-    for level, list_of_transitions in enumerate(transitions_to_0):
-        if level % 2 == 1 and np.max(list_of_transitions) > Er_values[0] and np.min(list_of_transitions) < Er_values[-1]:
-            plt.plot(EJ_values, list_of_transitions, line_styles[next_line_style_idx], linewidth=2,color = 'black',label = rf'$\omega_{{0,{level}}}$')
-            next_line_style_idx += 1
-            next_line_style_idx = next_line_style_idx % len(line_styles)
-    for level, list_of_transitions in enumerate(transitions_to_1):
-        if level % 2 == 0 and np.max(list_of_transitions) > Er_values[0] and np.min(list_of_transitions) < Er_values[-1]:
-            plt.plot(EJ_values, list_of_transitions, line_styles[next_line_style_idx], linewidth=2,color = 'black',label = rf'$\omega_{{1,{level}}}$')
-            next_line_style_idx += 1
-            next_line_style_idx = next_line_style_idx % len(line_styles)
-    for level, list_of_transitions in enumerate(transitions_to_2):
-        if level % 2 == 1 and np.max(list_of_transitions) > Er_values[0] and np.min(list_of_transitions) < Er_values[-1]:
-            plt.plot(EJ_values, list_of_transitions, line_styles[next_line_style_idx], linewidth=2,color = 'black',label = rf'$\omega_{{2,{level}}}$')
-            next_line_style_idx += 1
-            next_line_style_idx = next_line_style_idx % len(line_styles)
-
-    plt.xlabel('EJ')
-    # plt.ylabel('Er')
-    ax2.set_xlim([EJ_values[0], EJ_values[-1]])
-    ax2.set_ylim([Er_values[0], Er_values[-1]])
-    ax2.grid(which='major', color='grey', linestyle='-', linewidth=0.5)
-    ax2.minorticks_on()
-    ax2.grid(which='minor', color='grey', linestyle=':', linewidth=0.5)
-
-
-    plt.tight_layout()
-
-    return fig, (ax0, ax1, ax2)
-
-    
-
-
 def get_shift_accurate(ele,omega_i, omega_j, omega_r):
     return abs(ele)**2 / (omega_j-omega_i-omega_r) - abs(ele)**2 / (omega_i-omega_j-omega_r)
 
 
-def plot_v2(EJ_values, 
+
+def get_EJ_Er_sweep_data(EJ_values, 
          Er_values,
          EC,
          EL,
-         legend = False,    
-        norm1= LogNorm(vmin=1e-5,vmax=1e-4),
-         norm2 = LogNorm(vmin=1e-2,vmax=1),
-         big_pic = False,
          computational_state = [0,1],
-         leakage_state = [2],
+         leakage_state = 2,
     ):
 
     qubit_level = 25
     
-    X, Y = np.meshgrid(EJ_values, Er_values)
-    Z1 = np.zeros_like(X)
-    Z2 = np.zeros_like(X)
+    Z1 = np.zeros_like(np.meshgrid(EJ_values, Er_values)[0])
+    Z2 = np.zeros_like(np.meshgrid(EJ_values, Er_values)[0])
 
     highest_level_to_transition_from = 16
     transitions_to_0 = [[] for _ in range(highest_level_to_transition_from)]
@@ -872,7 +698,30 @@ def plot_v2(EJ_values,
 
             Z1[j, i] = abs(shifts[computational_state[1]]-shifts[computational_state[0]])
             Z2[j, i] = abs(shifts[leakage_state]-shifts[computational_state[1]])
+    return (transitions_to_0,
+            transitions_to_1,
+            transitions_to_2,
+            Z1,
+            Z2)
 
+
+
+def plot_EJ_Er_sweep(
+        EJ_values, 
+        Er_values,
+        transitions_to_0,
+        transitions_to_1,
+        transitions_to_2,
+        Z1,
+        Z2,
+        computational_state = [0,1],
+         leakage_state = 2,
+        legend = False,    
+        norm1= LogNorm(vmin=1e-5,vmax=1e-4),
+        norm2 = LogNorm(vmin=1e-2,vmax=1),
+        big_pic = False,
+):
+    X, Y = np.meshgrid(EJ_values, Er_values)
     # Plotting
     if not big_pic:
         fig = plt.figure(figsize=(2*(3+3/8), 
@@ -989,182 +838,6 @@ def plot_v2(EJ_values,
     ax2.grid(which='major', color='grey', linestyle='-', linewidth=0.5)
     ax2.minorticks_on()
     ax2.grid(which='minor', color='grey', linestyle=':', linewidth=0.5)
-
-
-    plt.tight_layout()
-
-    return fig, (ax0, ax1, ax2)
-
-    
-
-
-
-
-def plot_v3_get_data(EJ_values, 
-         Er_values,
-         EC,
-         EL,
-         legend = False,    
-        norm1= LogNorm(vmin=1e-5,vmax=1e-4),
-         norm2 = LogNorm(vmin=1e-2,vmax=1),
-         big_pic = False,
-         computational_state = [0,1],
-         leakage_state = [2],
-    ):
-
-    qubit_level = 25
-    
-    X, Y = np.meshgrid(EJ_values, Er_values)
-    Z1 = np.zeros_like(X)
-    Z2 = np.zeros_like(X)
-
-    highest_level_to_transition_from = 16
-    transitions_to_0 = [[] for _ in range(highest_level_to_transition_from)]
-    transitions_to_1 = [[] for _ in range(highest_level_to_transition_from)]
-    transitions_to_2 = [[] for _ in range(highest_level_to_transition_from)]
-
-    # for every EJ
-    for i in tqdm(range(len(EJ_values)), desc="sweeping"):
-        qbt = scqubits.Fluxonium(EJ=EJ_values[i],EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
-        num_evals = qubit_level
-        evals = qbt.eigenvals(num_evals)
-        elements = qbt.matrixelement_table('n_operator',evals_count = num_evals)
-        
-        # record the transitions to plot reference curves
-        for l in range(highest_level_to_transition_from):
-            transitions_to_0[l].append(evals[l]-evals[0])
-            transitions_to_1[l].append(evals[l]-evals[1])
-            transitions_to_2[l].append(evals[l]-evals[2])
-
-        # get estimated dispersive shifts
-        for j in range(len(Er_values)):
-            Er = Er_values[j]
-            shifts = [
-                sum([get_shift_accurate(elements[0,ql2], evals[0], evals[ql2], Er) for ql2 in range(num_evals)] ),
-                sum([get_shift_accurate(elements[1,ql2], evals[1], evals[ql2], Er) for ql2 in range(num_evals)]),
-                sum([get_shift_accurate(elements[2,ql2], evals[2], evals[ql2], Er) for ql2 in range(num_evals)] )
-            ]
-
-            Z1[j, i] = abs(shifts[computational_state[1]]-shifts[computational_state[0]])
-            Z2[j, i] = abs(shifts[leakage_state]-shifts[computational_state[1]])
-
-    # Plotting
-    if not big_pic:
-        fig = plt.figure(figsize=(2*(3+3/8), 
-                            (3+3/8)/1.8))
-    else:
-        fig = plt.figure(figsize=(2*(3+3/8)*3, 
-                            (3+3/8)/1.8*3))
-    gs = gridspec.GridSpec(1, 3, width_ratios=[1.2, 1.2, 1], wspace=0.4)
-
-    # ax1 = plt.subplot(gs[0])
-    # plt.text(-0.25, 1, '(a)', transform=plt.gca().transAxes, fontsize=12, fontweight='bold', va='top', color='black')
-    # plt.plot(EJ_values, transition_21, '-', linewidth=2,color = 'black')
-    # plt.xlabel('EJ')
-    # plt.ylabel(r'$\omega_{12}$')
-    
-    transitions = [transitions_to_0, transitions_to_1, transitions_to_2]
-    line_styles = [
-        (0,(1, 1)),
-        (0,(3, 3)),
-        (0,(3,2,1,2)),
-        (0, (1,1,1,1,3,3)),
-        (0, (1,1,1,1,1,1,3,3)),
-        (0, (1,1,2,2,1,1,4,5)),
-        (0, (5,5)),
-        (0, (5,1,5,1))
-    ]
-    line_style_counter = [[],[],[]]
-    next_line_style_idx = 0
-    def plot_transition_curves(initial_level):
-        nonlocal next_line_style_idx
-        if line_style_counter[initial_level] == []:
-            for level, list_of_transitions in enumerate(transitions[initial_level]):
-                if level % 2 == 1 - (initial_level%2) and np.max(list_of_transitions) > Er_values[0] and np.min(list_of_transitions) < Er_values[-1]:
-                    plt.plot(EJ_values, list_of_transitions, linestyle = line_styles[next_line_style_idx], linewidth=2,color = 'black',label = rf'$\omega_{{{initial_level},{level}}}$')
-                    line_style_counter[initial_level].append(next_line_style_idx)
-                    next_line_style_idx += 1
-                    next_line_style_idx = next_line_style_idx % len(line_styles)
-        else:
-            local_counter = 0
-            for level, list_of_transitions in enumerate(transitions[initial_level]):
-                if level % 2 == 1 - (initial_level%2) and np.max(list_of_transitions) > Er_values[0] and np.min(list_of_transitions) < Er_values[-1]:
-                    try:
-                        plt.plot(EJ_values, list_of_transitions, linestyle = line_styles[line_style_counter[initial_level][local_counter]], linewidth=2,color = 'black',label = rf'$\omega_{{{initial_level},{level}}}$')
-                    except:
-                        print(line_styles[line_style_counter[initial_level][local_counter]])
-                    local_counter += 1
-
-    ################################################################################
-    # Heatmap about the diff of shift from the two computational states
-    ################################################################################
-    ax0 = plt.subplot(gs[0])
-    plt.text(0.05, 1, '(a)', transform=plt.gca().transAxes, fontsize=12, fontweight='bold', va='top', color='black')
-    z1_plot = plt.pcolormesh(X, Y, Z1, shading='auto', cmap='inferno', norm=norm1)
-    plt.colorbar(z1_plot)
-
-
-    plot_transition_curves(computational_state[0])
-    plot_transition_curves(computational_state[1])
-
-
-    if legend:
-        plt.legend(loc='lower left')
-    plt.xlabel('EJ')
-    plt.ylabel('Er')
-    ax0.set_xlim([EJ_values[0], EJ_values[-1]])
-    ax0.set_ylim([Er_values[0], Er_values[-1]])
-    ax0.grid(which='major', color='grey', linestyle='-', linewidth=0.5)
-    ax0.minorticks_on()
-    ax0.grid(which='minor', color='grey', linestyle=':', linewidth=0.5)
-
-
-
-    ################################################################################
-    # Heatmap about the diff of shift from the first computational state and the leakage state
-    ################################################################################
-    ax1 = plt.subplot(gs[1])
-    plt.text(0.05, 1, '(b)', transform=plt.gca().transAxes, fontsize=12, fontweight='bold', va='top', color='black')
-    z2_plot = plt.pcolormesh(X, Y, Z2, shading='auto', cmap='inferno', norm=norm2)
-    plt.colorbar(z2_plot)
-
-    plot_transition_curves(computational_state[0])
-    plot_transition_curves(leakage_state)
-
-    if legend:
-        plt.legend(loc='lower left')
-    plt.xlabel('EJ')
-    # plt.ylabel('Er')
-    ax1.set_xlim([EJ_values[0], EJ_values[-1]])
-    ax1.set_ylim([Er_values[0], Er_values[-1]])
-    ax1.grid(which='major', color='grey', linestyle='-', linewidth=0.5)
-    ax1.minorticks_on()
-    ax1.grid(which='minor', color='grey', linestyle=':', linewidth=0.5)
-    # ax3.set_xticks([]) 
-    # ax3.set_yticks([])
-
-
-    ################################################################################
-    # Additional subplot for overlay
-    ################################################################################
-    ax2 = plt.subplot(gs[2])
-    plt.text(0.05, 1, '(c)', transform=plt.gca().transAxes, fontsize=12, fontweight='bold', va='top', color='black')
-    # Overlay of Z1 and Z2
-    plt.pcolormesh(X, Y, Z1, shading='auto', cmap='inferno', alpha=0.5, norm=norm1)
-    plt.pcolormesh(X, Y, Z2, shading='auto', cmap='inferno', alpha=0.5, norm=norm2)
-
-    plot_transition_curves(computational_state[0])
-    plot_transition_curves(computational_state[1])
-    plot_transition_curves(leakage_state)
-
-    plt.xlabel('EJ')
-    # plt.ylabel('Er')
-    ax2.set_xlim([EJ_values[0], EJ_values[-1]])
-    ax2.set_ylim([Er_values[0], Er_values[-1]])
-    ax2.grid(which='major', color='grey', linestyle='-', linewidth=0.5)
-    ax2.minorticks_on()
-    ax2.grid(which='minor', color='grey', linestyle=':', linewidth=0.5)
-
 
     plt.tight_layout()
 
