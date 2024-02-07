@@ -427,6 +427,8 @@ def find_dominant_frequency(expectation,tlist,dominant_frequency_already_found =
 
 def dressed_to_2_level_dm(dressed_dm,product_to_dressed, qubit_level, osc_level,computational_0,computational_1,products_to_keep=None):
     dressed_dm_data = pad_back_custom(dressed_dm, products_to_keep, product_to_dressed)
+    if dressed_dm_data.shape[1] == 1:
+        dressed_dm_data = qutip.ket2dm(dressed_dm_data)
     dressed_dm_data = dressed_dm_data.full()
     rho_product = np.zeros((qubit_level * osc_level, qubit_level * osc_level), dtype=complex)
     for (ql, ol), dressed_level in product_to_dressed.items():
