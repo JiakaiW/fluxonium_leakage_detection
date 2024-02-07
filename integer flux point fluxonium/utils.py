@@ -324,7 +324,7 @@ def generate_single_mapping(H_with_interaction_no_drive) -> np.ndarray:
     """
     evals, evecs = H_with_interaction_no_drive.eigenstates()
     overlap_matrix = scqubits.utils.spectrum_utils.convert_evecs_to_ndarray(evecs)
-    OVERLAP_THRESHOLD = 0.02
+    OVERLAP_THRESHOLD = 0.1
     product_state_names = []
     dims = H_with_interaction_no_drive.dims[0]
     system_size = len(dims)
