@@ -391,7 +391,7 @@ def generate_single_mapping(H_with_interaction_no_drive) -> np.ndarray:
 def transition_frequency(hilbertspace,s0: int, s1: int) -> float:
     return (hilbertspace.energy_by_dressed_index(s1)- hilbertspace.energy_by_dressed_index(s0))
 
-def find_dominant_frequency(expectation,tlist,dominant_frequency_already_found = None,plot = False):
+def find_dominant_frequency(expectation,tlist,dominant_frequency_already_found = None,plot = False,plot_freq = False):
     # In case alpha oscillates not at drive frequency, we do fourier transform to make the plot of coherent state look better 
 
     if dominant_frequency_already_found != None:
@@ -416,6 +416,9 @@ def find_dominant_frequency(expectation,tlist,dominant_frequency_already_found =
         plt.ylabel('Magnitude')
         plt.title('FFT of the Expectation Value')
         plt.grid(True)
+        plt.show()
+    elif plot_freq:
+        plt(expectation_fft)
         plt.show()
     else:
         return dominant_freq
