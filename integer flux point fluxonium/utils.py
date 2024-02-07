@@ -15,7 +15,7 @@ import os
 import pickle
 import qutip
 import scqubits
-from typing import List, Any
+from typing import List, Any, Union
 from tqdm.notebook import tqdm
 from tqdm import tqdm
 import uuid
@@ -59,7 +59,7 @@ class fluxonium_oscillator_system:
         self.hilbertspace.add_interaction(g_strength=g_strength,op1=self.qbt.n_operator,op2=self.osc.creation_operator,add_hc=True)
         self.hilbertspace.generate_lookup()
         self.product_to_dressed = generate_single_mapping(self.hilbertspace.hamiltonian())
-        
+        self.computaional_states = [int(computaional_states[0]),int(computaional_states[-1])]
         '''
         Define how to truncate
         '''
@@ -101,8 +101,9 @@ class fluxonium_oscillator_system:
                     osc_decay = False,
                     e_ops = None,
                     amp = 0.004,
-                    max_workers = 8,
+                    max_workers = None,
                     t_stop=None,
+                    post_processing = ['pad_back'],
                     ):
         '''
         This function runs mesolve on multiple initial states using multi-processing,
@@ -115,19 +116,25 @@ class fluxonium_oscillator_system:
             [self.a_trunc+self.a_trunc.dag(), square_cos],
         ]
         additional_args = {'w_d': self.w_d, 'amp': amp, 't_stop': t_stop}
-
+        post_processing_funcs = []
+        post_processing_args = []
+        if 'pad_back' in post_processing:
+            post_processing_funcs.append(pad_back_custom)
+            post_processing_args.append((self.products_to_keep, 
+                                self.product_to_dressed))
 
         results = [None] * len(intial_states)
         with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(mesolve_and_pad, 
+            futures = {executor.submit(mesolve_and_post_processing, 
                                        rho0=intial_states[i], 
                                        H_with_drive=H_with_drive,
-                                       tlist=tlist, 
-                                       products_to_keep = self.products_to_keep,
-                                       product_to_dressed = self.product_to_dressed,
+                                       tlist=tlist,
                                        additional_args = additional_args,
                                        c_ops=self.c_ops if osc_decay else None,
-                                       e_ops = e_ops
+                                       e_ops = e_ops,
+
+                                        post_processing_funcs=post_processing_funcs,
+                                        post_processing_args=post_processing_args,
                                        ): i for i in range(len(intial_states))}
             
             for future in concurrent.futures.as_completed(futures):
@@ -140,7 +147,8 @@ class fluxonium_oscillator_system:
 def run_fluxonium_osc_system_mesolve_jobs(
         list_of_systems: List[fluxonium_oscillator_system],
         list_of_kwargs: list[Any],
-        max_workers = 8
+        max_workers = None,
+        post_processing = ['pad_back'],
     ):
     '''
     This function helps run mesolve of different fluxonium_oscillator_system and different initial states concurrently
@@ -164,20 +172,41 @@ def run_fluxonium_osc_system_mesolve_jobs(
             [system.a_trunc+system.a_trunc.dag(), square_cos],
         ]
         list_of_H_with_drive.append(H_with_drive)
-        list_of_additional_args.append({'w_d': system.w_d, 'amp': kwargs['amp'], 't_stop': kwargs['t_stop']})
+        list_of_additional_args.append({'w_d': system.w_d, 'amp': kwargs['amp'], 't_stop': kwargs.get('t_stop',None)})
 
     results = [None] * len(list_of_systems)
     with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(mesolve_and_pad, 
-                                    rho0=list_of_kwargs[i]['intial_state'], 
-                                    H_with_drive=list_of_H_with_drive[i],
-                                    tlist=list_of_kwargs[i]['tlist'], 
-                                    products_to_keep = list_of_systems[i].products_to_keep,
-                                    product_to_dressed = list_of_systems[i].product_to_dressed,
-                                    additional_args = list_of_additional_args[i],
-                                    c_ops=list_of_systems[i].c_ops if list_of_kwargs[i]['osc_decay'] else None,
-                                    e_ops = list_of_kwargs[i]['e_ops']
-                                    ): i for i in range(len(list_of_systems))}
+        futures = {}
+        for i in range(len(list_of_systems)):
+            post_processing_funcs = []
+            post_processing_args = []
+            
+            if 'pad_back' in post_processing:
+                post_processing_funcs.append(pad_back_custom)
+                post_processing_args.append((list_of_systems[i].products_to_keep, 
+                                            list_of_systems[i].product_to_dressed))
+            if 'partial_trace_computational_states' in post_processing:
+                post_processing_funcs.append(dressed_to_2_level_dm)
+                post_processing_args.append((
+                                            list_of_systems[i].product_to_dressed,
+                                            list_of_systems[i].qubit_level, 
+                                            list_of_systems[i].osc_level,
+                                            list_of_systems[i].computaional_states[0],
+                                            list_of_systems[i].computaional_states[1],
+                                            None))
+            future = executor.submit(
+                mesolve_and_post_processing, 
+                rho0=list_of_kwargs[i]['intial_state'], 
+                H_with_drive=list_of_H_with_drive[i],
+                tlist=list_of_kwargs[i]['tlist'], 
+                additional_args=list_of_additional_args[i],
+                c_ops=list_of_systems[i].c_ops if list_of_kwargs[i]['osc_decay'] else None,
+                e_ops=list_of_kwargs[i].get('e_ops', None),
+
+                post_processing_funcs=post_processing_funcs,
+                post_processing_args=post_processing_args,
+            )
+            futures[future] = i
         
         for future in concurrent.futures.as_completed(futures):
             original_index = futures[future]
@@ -200,14 +229,16 @@ def square_cos(t, args):
         cos = np.cos(w_d * 2 * np.pi * t)
         return 2 * np.pi * amp * cos
     
-def mesolve_and_pad(rho0,
+
+def mesolve_and_post_processing(
+            rho0,
             H_with_drive,
             tlist, 
-            products_to_keep,
-            product_to_dressed,
             additional_args,
             c_ops = None,
             e_ops = None,
+            post_processing_funcs=[],
+            post_processing_args=[],
             ):
     result = qutip.mesolve(
         H=H_with_drive,
@@ -219,10 +250,10 @@ def mesolve_and_pad(rho0,
         options=qutip.Options(store_states=True, nsteps=80000, num_cpus=1),
         progress_bar = qutip.ui.progressbar.EnhancedTextProgressBar(),
     )
-    padded_states = [pad_back_custom(state, products_to_keep, product_to_dressed) for state in result.states]
-    result.states = padded_states
-    return result
+    for func, args in zip(post_processing_funcs, post_processing_args):
+        result.states = [func(state, *args) for state in result.states]
 
+    return result
 
 
 ############################################################################
@@ -246,7 +277,10 @@ def truncate_custom(qobj: qutip.Qobj, products_to_keep: list, product_to_dressed
         truncated_matrix = qobj.full()[np.ix_(indices_to_keep, indices_to_keep)]
         return qutip.Qobj(truncated_matrix)
 
-def pad_back_custom(qobj: qutip.Qobj, products_to_keep: list, product_to_dressed: dict) -> qutip.Qobj:
+def pad_back_custom(qobj: qutip.Qobj, products_to_keep: Union[list,None], product_to_dressed: dict) -> qutip.Qobj:
+    if products_to_keep == None:
+        # for compatibility
+        return qobj
     indices_to_keep = [dressed_level for (qubit_level, oscillator_level), dressed_level in product_to_dressed.items() if [qubit_level, oscillator_level] in products_to_keep]
     indices_to_keep.sort()
 
