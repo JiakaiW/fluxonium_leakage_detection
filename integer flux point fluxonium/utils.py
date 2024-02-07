@@ -209,7 +209,6 @@ def mesolve_and_pad(rho0,
             c_ops = None,
             e_ops = None,
             ):
-
     result = qutip.mesolve(
         H=H_with_drive,
         rho0=rho0,
