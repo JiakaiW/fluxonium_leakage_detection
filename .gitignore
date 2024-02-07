@@ -2,22 +2,5 @@ _pycache_/
 .DS_Store
 *pycache*
 *.zip
-*mcsolve_result*
-*mcsolve_input*
-mcsolve_result*/
-*search_result*/
-*temp_tomo*/
-*mcsolve large dim*/
-integer flux point fluxonium/paper/mcsolve_tomo_results.pkl
-integer flux point fluxonium/paper/mcsolve_detection_results.pkl
-integer flux point fluxonium/paper/mcsolve_detection_results_kappa1e-3.pkl
-integer flux point fluxonium/paper/mcsolve_detection_results_kappa2e-3.pkl
-integer flux point fluxonium/paper/mcsolve_detection_results_kappa5e-3.pkl
-integer flux point fluxonium/paper/mcsolve_tomo_results_kappa1e-3.pkl
-integer flux point fluxonium/paper/mcsolve_tomo_results_kappa1e-3_15levels.pkl
-integer flux point fluxonium/paper/mcsolve_tomo_results_kappa2e-3.pkl
-integer flux point fluxonium/paper/mcsolve_tomo_results_kappa5e-3.pkl
-*.pkl
-*.pkl
-*.pkl
-*.pkl
+*.err
+integer flux point fluxonium/_backup_Feb6/old_by_jan_24_2024/old_by_Jan_2024/old/newly_depreciated/long depreciated/depreciated mcsolve w_r = 3/
