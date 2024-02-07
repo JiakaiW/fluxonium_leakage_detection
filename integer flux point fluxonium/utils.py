@@ -606,6 +606,12 @@ def plot_heatmap(result, time_index, product_to_dressed, qubit_levels, oscillato
     elif hasattr(result, 'y'):
         dm = result.y[time_index]
 
+    if dm.shape[1] == 1:
+        dm = qutip.ket2dm(dm)
+    
+    dm = 0.5 * (dm + dm.dag())
+    dm = dm / dm.tr()
+    
     # dm = pad_back_function(dm)
     grid = np.zeros(( qubit_levels,oscillator_levels))
 
