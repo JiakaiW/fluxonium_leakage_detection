@@ -727,9 +727,9 @@ def get_EJ_Er_sweep_data(EJ_values,
         
         # record the transitions to plot reference curves
         for l in range(highest_level_to_transition_from):
-            transitions_to_0[l].append(evals[l]-evals[0])
-            transitions_to_1[l].append(evals[l]-evals[1])
-            transitions_to_2[l].append(evals[l]-evals[2])
+            transitions_to_0[l].append(abs(evals[l]-evals[0]))
+            transitions_to_1[l].append(abs(evals[l]-evals[1]))
+            transitions_to_2[l].append(abs(evals[l]-evals[2]))
 
         # get estimated dispersive shifts
         for j in range(len(Er_values)):
