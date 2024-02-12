@@ -96,7 +96,7 @@ class fluxonium_oscillator_system:
         return pad_back_custom(qobj, self.products_to_keep, self.product_to_dressed)
         
     def run_mesolve_on_driving_osc(self,
-                    intial_states,
+                    initial_state, # truncated initial states
                     tlist,
                     osc_decay = False,
                     e_ops = None,
@@ -123,10 +123,10 @@ class fluxonium_oscillator_system:
             post_processing_args.append((self.products_to_keep, 
                                 self.product_to_dressed))
 
-        results = [None] * len(intial_states)
+        results = [None] * len(initial_state)
         with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = {executor.submit(mesolve_and_post_processing, 
-                                       rho0=intial_states[i], 
+                                       rho0=initial_state[i], 
                                        H_with_drive=H_with_drive,
                                        tlist=tlist,
                                        additional_args = additional_args,
@@ -135,14 +135,43 @@ class fluxonium_oscillator_system:
 
                                         post_processing_funcs=post_processing_funcs,
                                         post_processing_args=post_processing_args,
-                                       ): i for i in range(len(intial_states))}
+                                       ): i for i in range(len(initial_state))}
             
             for future in concurrent.futures.as_completed(futures):
                 original_index = futures[future]
                 results[original_index] = future.result()
 
         return results
+    
+    def run_mcsolve_on_driving_osc(self,
+                            initial_state,
+                            tlist,
+                            osc_decay = True,
+                            e_ops = None,
+                            amp = 0.004,
+                            t_stop=None,
+                            ):
+        '''
+        This function runs mcsolve on one initial states return one qutip.solver.result
+        '''
 
+        H_with_drive = [
+            self.diag_dressed_hamiltonian,
+            [self.a_trunc+self.a_trunc.dag(), square_cos],
+        ]
+        additional_args = {'w_d': self.w_d, 'amp': amp, 't_stop': t_stop}
+
+        result = qutip.mcsolve(psi0=initial_state, 
+                                   H=H_with_drive,
+                                   progress_bar = qutip.ui.progressbar.EnhancedTextProgressBar(),
+                                   tlist=tlist,
+                                   args = additional_args,
+                                   c_ops=self.c_ops if osc_decay else None,
+                                   ntraj = 500,
+                                   e_ops = e_ops,
+                                   options=qutip.Options(store_states=True,num_cpus = None)
+                                   )
+        return result
 
 def run_fluxonium_osc_system_mesolve_jobs(
         list_of_systems: List[fluxonium_oscillator_system],
