@@ -96,7 +96,7 @@ class fluxonium_oscillator_system:
         return pad_back_custom(qobj, self.products_to_keep, self.product_to_dressed)
         
     def run_mesolve_on_driving_osc(self,
-                    initial_state, # truncated initial states
+                    initial_states, # truncated initial states
                     tlist,
                     osc_decay = False,
                     e_ops = None,
@@ -123,10 +123,10 @@ class fluxonium_oscillator_system:
             post_processing_args.append((self.products_to_keep, 
                                 self.product_to_dressed))
 
-        results = [None] * len(initial_state)
+        results = [None] * len(initial_states)
         with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = {executor.submit(mesolve_and_post_processing, 
-                                       rho0=initial_state[i], 
+                                       rho0=initial_states[i], 
                                        H_with_drive=H_with_drive,
                                        tlist=tlist,
                                        additional_args = additional_args,
@@ -135,7 +135,7 @@ class fluxonium_oscillator_system:
 
                                         post_processing_funcs=post_processing_funcs,
                                         post_processing_args=post_processing_args,
-                                       ): i for i in range(len(initial_state))}
+                                       ): i for i in range(len(initial_states))}
             
             for future in concurrent.futures.as_completed(futures):
                 original_index = futures[future]
