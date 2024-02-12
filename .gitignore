@@ -10,3 +10,8 @@ Miniconda3-latest-Linux-x86_64.sh
 *mcsolve_2.65_g0.13_a0.003_10level_qbt_state2.pkl
 *mcsolve_2.65_g0.13_a0.003_10level_qbt_state3.pkl
 *mcsolve_2.65_g0.13_a0.003_10level_qbt_state4.pkl
+integer flux point fluxonium/pickles/mcsolve_2.65_g0.13_a0.003_10level_qbt_state0_kappa0.004.pkl
+integer flux point fluxonium/pickles/mcsolve_2.65_g0.13_a0.003_10level_qbt_state2_kappa0.004.pkl
+integer flux point fluxonium/pickles/mcsolve_2.65_g0.13_a0.003_10level_qbt_state4_kappa0.004.pkl
+integer flux point fluxonium/pickles/mcsolve_2.65_g0.13_a0.003_10level_qbt_state3_kappa0.004.pkl
+integer flux point fluxonium/pickles/mcsolve_2.65_g0.13_a0.003_10level_qbt_state1_kappa0.004.pkl
