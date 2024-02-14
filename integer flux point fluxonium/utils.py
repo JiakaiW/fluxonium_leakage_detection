@@ -380,6 +380,7 @@ def test_truncate_and_pad_custom():
 
 def generate_single_mapping(H_with_interaction_no_drive) -> np.ndarray:
     """
+    The input should be in product basis
     Maps product of bare states to dressed state
     Returns a dictionary like {(0,0,0):0,(0,0,1):1}
     Use this function instead of scqubit's because I can change the overlap threshold here
@@ -403,16 +404,18 @@ def generate_single_mapping(H_with_interaction_no_drive) -> np.ndarray:
     generate_product_states(current_state, 0)
 
     total_dim = math.prod(dims)
-    dressed_indices = [None] * total_dim
+    dressed_indices_of_product_states = [None] * total_dim
+
+    # for every energy eigenstate, from the lowerst to the highest, find the product state
     for dressed_index in range(len(evals)):
         max_position = (np.abs(overlap_matrix[dressed_index, :])).argmax()
         max_overlap = np.abs(overlap_matrix[dressed_index, max_position])
         overlap_matrix[:, max_position] = 0
-        dressed_indices[int(max_position)] = dressed_index
+        dressed_indices_of_product_states[int(max_position)] = dressed_index
         if (max_overlap**2 < OVERLAP_THRESHOLD):
             print(f'max overlap^2 {max_overlap**2} below threshold for dressed state {dressed_index} with eval {evals[dressed_index]}')
     product_to_dressed = {}
-    for product, dressed in zip(product_state_names,dressed_indices):
+    for product, dressed in zip(product_state_names,dressed_indices_of_product_states):
         product_to_dressed[product] = dressed
     return product_to_dressed
 
