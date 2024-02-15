@@ -15,7 +15,7 @@ import os
 import pickle
 import qutip
 import scqubits
-from typing import List, Any, Union
+from typing import List, Any, Union, Tuple
 from tqdm.notebook import tqdm
 from tqdm import tqdm
 import uuid
@@ -37,6 +37,7 @@ class fluxonium_oscillator_system:
     '''
     def __init__(self,
                 computaional_states:str, # = '0,1' or '1,2'
+                drive_transition: Tuple[int] = None,
                 EJ:float = 3,
                 EC:float = 0.6,
                 EL:float = 0.13,
@@ -44,7 +45,6 @@ class fluxonium_oscillator_system:
                 g_strength:float = 0.3,
                 qubit_level:float = 30,
                 osc_level:float = 30,
-                
                 kappa = 0.001,
                 products_to_keep: List[List[int]]= None
                 ):
@@ -80,7 +80,9 @@ class fluxonium_oscillator_system:
                 2 * np.pi * qutip.Qobj(np.diag(evals),
                 dims=[self.hilbertspace.subsystem_dims] * 2)
         )[:, :]))
-        if computaional_states == '1,2':
+        if drive_transition!= None:
+            self.w_d = transition_frequency(self.hilbertspace,self.product_to_dressed[drive_transition[0]],self.product_to_dressed[drive_transition[1]] ) 
+        elif computaional_states == '1,2':
             self.w_d = transition_frequency(self.hilbertspace,self.product_to_dressed[(0,0)],self.product_to_dressed[(0,1)] ) 
         elif computaional_states == '0,1':
             self.w_d = transition_frequency(self.hilbertspace,self.product_to_dressed[(2,0)],self.product_to_dressed[(2,1)] ) 
