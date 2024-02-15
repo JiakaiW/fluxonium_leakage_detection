@@ -46,7 +46,8 @@ class fluxonium_oscillator_system:
                 qubit_level:float = 30,
                 osc_level:float = 30,
                 kappa = 0.001,
-                products_to_keep: List[List[int]]= None
+                products_to_keep: List[List[int]]= None,
+                w_d:float = None
                 ):
         '''
         Initialize objects before truncation
@@ -73,14 +74,16 @@ class fluxonium_oscillator_system:
         '''
         Truncate objects
         '''
-        self.a = qutip.Qobj(self.hilbertspace.op_in_dressed_eigenbasis(op=self.osc.annihilation_operator)[:, :])
+        self.a = qutip.Qobj(self.hilbertspace.op_in_dressed_eigenbasis(self.osc.annihilation_operator)[:, :])
         self.a_trunc = self.truncate_function(self.a)
         (evals,) = self.hilbertspace["evals"]
         self.diag_dressed_hamiltonian = self.truncate_function(qutip.Qobj((
                 2 * np.pi * qutip.Qobj(np.diag(evals),
                 dims=[self.hilbertspace.subsystem_dims] * 2)
         )[:, :]))
-        if drive_transition!= None:
+        if w_d!= None:
+            self.w_d = w_d
+        elif drive_transition!= None:
             self.w_d = transition_frequency(self.hilbertspace,self.product_to_dressed[drive_transition[0]],self.product_to_dressed[drive_transition[1]] ) 
         elif computaional_states == '1,2':
             self.w_d = transition_frequency(self.hilbertspace,self.product_to_dressed[(0,0)],self.product_to_dressed[(0,1)] ) 
@@ -105,6 +108,7 @@ class fluxonium_oscillator_system:
                     amp = 0.004,
                     max_workers = None,
                     t_stop=None,
+                    t_rise=None,
                     post_processing = ['pad_back'],
                     ):
         '''
@@ -115,9 +119,9 @@ class fluxonium_oscillator_system:
 
         H_with_drive = [
             self.diag_dressed_hamiltonian,
-            [self.a_trunc+self.a_trunc.dag(), square_cos],
+            [self.a_trunc+self.a_trunc.dag(), square_cos_with_rise_fall],
         ]
-        additional_args = {'w_d': self.w_d, 'amp': amp, 't_stop': t_stop}
+        additional_args = {'w_d': self.w_d, 'amp': amp, 't_stop': t_stop, 't_rise': t_rise}
         post_processing_funcs = []
         post_processing_args = []
         if 'pad_back' in post_processing:
@@ -152,6 +156,7 @@ class fluxonium_oscillator_system:
                             e_ops = None,
                             amp = 0.004,
                             t_stop=None,
+                            t_rise=None
                             ):
         '''
         This function runs mcsolve on one initial states return one qutip.solver.result
@@ -159,9 +164,9 @@ class fluxonium_oscillator_system:
 
         H_with_drive = [
             self.diag_dressed_hamiltonian,
-            [self.a_trunc+self.a_trunc.dag(), square_cos],
+            [self.a_trunc+self.a_trunc.dag(), square_cos_with_rise_fall],
         ]
-        additional_args = {'w_d': self.w_d, 'amp': amp, 't_stop': t_stop}
+        additional_args = {'w_d': self.w_d, 'amp': amp, 't_stop': t_stop, 't_rise': t_rise}
 
         result = qutip.mcsolve(psi0=initial_state, 
                                    H=H_with_drive,
@@ -200,10 +205,10 @@ def run_fluxonium_osc_system_mesolve_jobs(
     for system,kwargs in zip(list_of_systems,list_of_kwargs):
         H_with_drive = [
             system.diag_dressed_hamiltonian,
-            [system.a_trunc+system.a_trunc.dag(), square_cos],
+            [system.a_trunc+system.a_trunc.dag(), square_cos_with_rise_fall],
         ]
         list_of_H_with_drive.append(H_with_drive)
-        list_of_additional_args.append({'w_d': system.w_d, 'amp': kwargs['amp'], 't_stop': kwargs.get('t_stop',None)})
+        list_of_additional_args.append({'w_d': system.w_d, 'amp': kwargs['amp'], 't_stop': kwargs.get('t_stop',None), 't_rise': kwargs.get('t_rise',None)})
 
     results = [None] * len(list_of_systems)
     with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -260,6 +265,34 @@ def square_cos(t, args):
         cos = np.cos(w_d * 2 * np.pi * t)
         return 2 * np.pi * amp * cos
     
+def square_cos_with_rise_fall(t, args):
+    w_d = args['w_d']
+    amp = args['amp']
+    t_rise = args.get('t_rise', 0)  # Default rise time is 0 for no rise
+    t_stop = args.get('t_stop', None)
+
+    # Function for the cosine modulation
+    def cos_modulation():
+        return 2 * np.pi * amp * np.cos(w_d * 2 * np.pi * t)
+
+    # Check if rise and fall times are specified
+    if t_rise > 0 and t_stop is None:
+        raise Exception('t_rise doesnt work when t_stop isnt provided')
+    elif t_rise > 0 and t_stop is not None:
+        t_fall_start = t_stop - t_rise  # Calculate when the fall should start
+        if 0 <= t <= t_rise:  # Rise segment
+            return np.sin(np.pi * t / (2 * t_rise))**2 * cos_modulation()
+        elif t_rise < t <= t_fall_start:  # Constant amplitude segment
+            return cos_modulation()
+        elif t_fall_start < t <= t_stop:  # Fall segment
+            return np.sin(np.pi * (t_stop - t) / (2 * t_rise))**2 * cos_modulation()
+        else:
+            return 0
+    else:  # No rise or fall, behave like the original function
+        return cos_modulation() if t_stop is None or t <= t_stop else 0
+
+
+
 
 def mesolve_and_post_processing(
             rho0,
@@ -282,7 +315,8 @@ def mesolve_and_post_processing(
         progress_bar = qutip.ui.progressbar.EnhancedTextProgressBar(),
     )
     for func, args in zip(post_processing_funcs, post_processing_args):
-        result.states = [func(state, *args) for state in result.states]
+        result.states = [func(state, *args) for state in tqdm(result.states, desc=f"Processing states with {func.__name__}")]
+
 
     return result
 
