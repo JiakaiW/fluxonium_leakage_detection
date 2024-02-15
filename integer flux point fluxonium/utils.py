@@ -781,6 +781,81 @@ def get_EJ_Er_sweep_data(EJ_values,
             Z2)
 
 
+def get_EJ_Er_sweep_data_diagonalization(EJ_values, 
+         Er_values,
+         EC,
+         EL,
+         g,
+         computational_state = [0,1],
+         leakage_state = 2,
+    ):
+
+    qubit_level = 20
+    
+    Z1 = np.zeros_like(np.meshgrid(EJ_values, Er_values)[0])
+    Z2 = np.zeros_like(np.meshgrid(EJ_values, Er_values)[0])
+
+    highest_level_to_transition_from = 16
+    transitions_to_0 = [[] for _ in range(highest_level_to_transition_from)]
+    transitions_to_1 = [[] for _ in range(highest_level_to_transition_from)]
+    transitions_to_2 = [[] for _ in range(highest_level_to_transition_from)]
+
+    # for every EJ
+    for i in tqdm(range(len(EJ_values)), desc="sweeping"):
+        qbt = scqubits.Fluxonium(EJ=EJ_values[i],EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
+        num_evals = qubit_level
+        evals = qbt.eigenvals(num_evals)
+        elements = qbt.matrixelement_table('n_operator',evals_count = num_evals)
+        
+        # record the transitions to plot reference curves
+        for l in range(highest_level_to_transition_from):
+            transitions_to_0[l].append(abs(evals[l]-evals[0]))
+            transitions_to_1[l].append(abs(evals[l]-evals[1]))
+            transitions_to_2[l].append(abs(evals[l]-evals[2]))
+
+        # get estimated dispersive shifts
+        for j in range(len(Er_values)):
+            Er = Er_values[j]
+            # shifts = [
+            #     sum([get_shift_accurate(elements[0,ql2], evals[0], evals[ql2], Er) for ql2 in range(num_evals)] ),
+            #     sum([get_shift_accurate(elements[1,ql2], evals[1], evals[ql2], Er) for ql2 in range(num_evals)]),
+            #     sum([get_shift_accurate(elements[2,ql2], evals[2], evals[ql2], Er) for ql2 in range(num_evals)] )
+            # ]
+            try:
+                osc = scqubits.Oscillator(
+                E_osc=Er,
+                truncated_dim=6
+                )
+                hilbertspace = scqubits.HilbertSpace([qbt, osc])
+                hilbertspace.add_interaction(
+                    g_strength=g,
+                    op1=qbt.n_operator,
+                    op2=osc.creation_operator,
+                    add_hc=True
+                )
+                hilbertspace.generate_lookup()
+                chi0 = transition_frequency(hilbertspace,hilbertspace.dressed_index((0,0)),hilbertspace.dressed_index((0,1))) - Er
+                chi1 = transition_frequency(hilbertspace,hilbertspace.dressed_index((1,0)),hilbertspace.dressed_index((1,1))) - Er
+                chi2 = transition_frequency(hilbertspace,hilbertspace.dressed_index((2,0)),hilbertspace.dressed_index((2,1))) - Er
+                shifts = [
+                    chi0,
+                    chi1,
+                    chi2
+                ]
+
+                Z2[j, i] = abs(shifts[leakage_state]-shifts[computational_state[1]])
+                Z1[j, i] = abs(shifts[computational_state[1]]-shifts[computational_state[0]])
+            except:
+                Z2[j, i] = np.nan   
+                Z1[j, i] = np.nan
+    return (transitions_to_0,
+            transitions_to_1,
+            transitions_to_2,
+            Z1,
+            Z2)
+
+
+
 
 def plot_EJ_Er_sweep(
         EJ_values, 
