@@ -270,7 +270,8 @@ def square_cos_with_rise_fall(t, args):
     amp = args['amp']
     t_rise = args.get('t_rise', 0)  # Default rise time is 0 for no rise
     t_stop = args.get('t_stop', None)
-
+    if t_rise == None:
+        t_rise = 0
     # Function for the cosine modulation
     def cos_modulation():
         return 2 * np.pi * amp * np.cos(w_d * 2 * np.pi * t)
