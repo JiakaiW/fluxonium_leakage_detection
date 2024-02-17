@@ -10,12 +10,12 @@ if __name__ == '__main__':
     freeze_support()
 
     t_rise = 0
-    square_t_stop = 733
+    square_t_stop = 733 + 20
     area_under_square  = square_t_stop
     area_under_rise_and_fall = t_rise
     t_stop = 2 * t_rise + (square_t_stop-area_under_rise_and_fall)
 
-    tot_time = int(t_stop + 20)
+    tot_time = int(t_stop)
     tlist = np.linspace(0, tot_time, tot_time)
 
     qubit_level = 25
