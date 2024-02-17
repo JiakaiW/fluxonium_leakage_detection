@@ -110,16 +110,18 @@ class fluxonium_oscillator_system:
                     t_stop=None,
                     t_rise=None,
                     post_processing = ['pad_back'],
+                    driven_operator = None,
                     ):
         '''
         This function runs mesolve on multiple initial states using multi-processing,
           and return a list of qutip.solver.result
         '''
-
-
+        
+        if driven_operator == None:
+            driven_operator = self.a_trunc+self.a_trunc.dag()
         H_with_drive = [
             self.diag_dressed_hamiltonian,
-            [self.a_trunc+self.a_trunc.dag(), square_cos_with_rise_fall],
+            [driven_operator, square_cos_with_rise_fall],
         ]
         additional_args = {'w_d': self.w_d, 'amp': amp, 't_stop': t_stop, 't_rise': t_rise}
         post_processing_funcs = []
@@ -156,15 +158,17 @@ class fluxonium_oscillator_system:
                             e_ops = None,
                             amp = 0.004,
                             t_stop=None,
-                            t_rise=None
+                            t_rise=None,
+                            driven_operator = None,
                             ):
         '''
         This function runs mcsolve on one initial states return one qutip.solver.result
         '''
-
+        if driven_operator == None:
+            driven_operator = self.a_trunc+self.a_trunc.dag()
         H_with_drive = [
             self.diag_dressed_hamiltonian,
-            [self.a_trunc+self.a_trunc.dag(), square_cos_with_rise_fall],
+            [driven_operator, square_cos_with_rise_fall],
         ]
         additional_args = {'w_d': self.w_d, 'amp': amp, 't_stop': t_stop, 't_rise': t_rise}
 
@@ -196,16 +200,18 @@ def run_fluxonium_osc_system_mesolve_jobs(
                                                         'osc_decay' : False,
                                                         'e_ops' : None,
                                                         'amp' : 0.004,
-                                                        't_stop':None,}
+                                                        't_stop':None,
+                                                        'driven_operator': system.a_trunc+system.a_trunc.dag()}
     '''
     assert len(list_of_systems) == len(list_of_kwargs)
     # Step-1, define functions
     list_of_H_with_drive = []
     list_of_additional_args = []
     for system,kwargs in zip(list_of_systems,list_of_kwargs):
+        driven_operator = kwargs.get('driven_operator',system.a_trunc+system.a_trunc.dag())
         H_with_drive = [
             system.diag_dressed_hamiltonian,
-            [system.a_trunc+system.a_trunc.dag(), square_cos_with_rise_fall],
+            [driven_operator, square_cos_with_rise_fall],
         ]
         list_of_H_with_drive.append(H_with_drive)
         list_of_additional_args.append({'w_d': system.w_d, 'amp': kwargs['amp'], 't_stop': kwargs.get('t_stop',None), 't_rise': kwargs.get('t_rise',None)})
