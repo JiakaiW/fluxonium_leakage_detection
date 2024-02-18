@@ -363,7 +363,7 @@ def square_cos_with_rise_fall(t, args):
     else:  # No rise or fall, behave like the original function
         return cos_modulation() if t_stop is None or t <= t_stop else 0
 
-def get_qiskit_square_pulse_with_sin_squared_edges(w_d_without_2pi,amp_without_2pi = 0.03, t_rise = 15,t_stop = 100):
+def get_qiskit_square_pulse_with_sin_squared_edges(w_d_without_2pi,amp_without_2pi = 0.03, t_rise = 15,t_stop = 100, draw = False):
     t_square =  t_stop - 2 * t_rise
     signal_sample_dt = 0.1 # Sample rate of the backend in ns.
     base_drive_amplitude = amp_without_2pi * 2 * np.pi
@@ -400,6 +400,17 @@ def get_qiskit_square_pulse_with_sin_squared_edges(w_d_without_2pi,amp_without_2
                 ), 
                 qiskit.pulse.DriveChannel(0)
             )
+    if draw:
+        square.draw()
+        from qiskit_dynamics.pulse import InstructionToSignals
+        converter = InstructionToSignals(signal_sample_dt, carriers={"d0": carrier_freq})
+        signals = converter.get_signals(square)
+        fig, axs = plt.subplots(1, 2, figsize=(10, 4.5))
+        for ax, title in zip(axs, ["envelope", "signal"]):
+            signals[0].draw(0, tot_time, 2000, title, axis=ax)
+            ax.set_xlabel("Time (ns)")
+            ax.set_ylabel("Amplitude")
+            ax.set_title(title)
     return square
 
 def mesolve_and_post_processing(
