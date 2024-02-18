@@ -298,9 +298,6 @@ def square_cos_with_rise_fall(t, args):
     else:  # No rise or fall, behave like the original function
         return cos_modulation() if t_stop is None or t <= t_stop else 0
 
-
-
-
 def mesolve_and_post_processing(
             rho0,
             H_with_drive,
@@ -326,6 +323,94 @@ def mesolve_and_post_processing(
 
 
     return result
+
+def solve_with_jax_gpu(ham_solver, y0, tlist, signals, max_dt=1, chunk_size=10):
+    # Split the time list `tlist` into chunks to process in segments for efficiency
+    tlist_chunks = []
+    for i in range(0, len(tlist) - 1, chunk_size - 1):
+        chunk = tlist[i:i + chunk_size]
+        tlist_chunks.append(chunk)
+
+    # Initialize the current state of the system with the initial state `y0`
+    current_state = y0
+    chunk_results = []
+
+    # Iterate over each chunk of time list
+    for i, chunk in enumerate(tlist_chunks):
+        # Solve the Hamiltonian for the current chunk of time
+        result = ham_solver.solve(
+            y0=current_state,  # Initial state for the chunk
+            t_span=[chunk[0], chunk[-1]],  # Start and end time of the chunk
+            signals=signals,  # External signals applied to the system
+            method='jax_expm_parallel',  # Method to solve, utilizing parallel expm via JAX
+            t_eval=jnp.linspace(chunk[0], chunk[-1], len(chunk)),  # Time points to evaluate
+            max_dt=max_dt  # Maximum time step for the solver
+        )
+
+        # Append the solution for the current chunk to the results, avoiding duplicate states between chunks
+        if i == 0:
+            chunk_results.extend(result.y)
+        else:
+            chunk_results.extend(result.y[1:])
+
+        # Update the current state to the last state of the current chunk for continuity in the next chunk
+        current_state = result.y[-1]
+        clear_output(wait=True)  # Clear the output to keep the progress display clean
+        print(f"Progress: Chunk {i + 1}/{len(tlist_chunks)} solved.")  # Print progress
+
+    # Combine all chunk results into a custom ODE result object for the entire time list
+    ode_result = CustomOdeResult(times=tlist, states=chunk_results)
+    return ode_result
+
+def solve_with_jax_gpu_lindbladian(ham_solver, y0, tlist, signals, max_dt=1, chunk_size=10):
+    # Set the solver to use a dense vectorized mode for Lindbladian dynamics
+    ham_solver.model.evaluation_mode = "dense_vectorized"
+    
+    # Ensure the initial state `y0` is a density matrix flattened into a vector if not already
+    if y0.shape[0] != ham_solver.model.dim**2:
+        y0 = y0 @ y0.conj().T  # Convert the state to a density matrix if not already
+        y0 = y0.flatten(order='F')  # Flatten the matrix to a vector
+
+    # Initialize an empty custom ODE result object
+    ode_result = CustomOdeResult()
+    # Solve the system in chunks if chunk size is valid
+    if chunk_size >= 1:
+        ode_result = solve_with_jax_gpu(ham_solver, y0, tlist, signals, max_dt, chunk_size)
+    else:
+        # For invalid chunk sizes, solve the system over the entire time list without chunking
+        current_state = y0
+        chunk_results = []
+        t_results = []
+        total_time = tlist[-1] - tlist[0]
+        num_intervals = int(len(tlist) / chunk_size)
+        interval_length = total_time / num_intervals
+
+        # Iterate over each interval and solve
+        for i in range(num_intervals):
+            t_start = tlist[0] + i * interval_length
+            t_end = t_start + interval_length
+            t_eval_interval = jnp.array([t_end])
+
+            result = ham_solver.solve(
+                y0=current_state,
+                t_span=[t_start, t_end],
+                signals=signals,
+                method='jax_expm_parallel',
+                t_eval=t_eval_interval,
+                max_dt=max_dt
+            )
+
+            chunk_results.append(result.y[-1])
+            t_results.append(t_eval_interval[-1])
+
+            current_state = result.y[-1]
+            clear_output(wait=True)
+            print(f"Progress: Interval {i + 1}/{num_intervals} solved.")
+        
+        # Compile results into a custom ODE result object
+        ode_result = CustomOdeResult(t_results, chunk_results)
+    
+    return ode
 
 
 ############################################################################
