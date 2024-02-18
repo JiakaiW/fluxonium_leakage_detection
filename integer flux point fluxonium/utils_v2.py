@@ -37,8 +37,9 @@ import uuid
 
 ############################################################################
 #
-#
 # Classes about modelling the system and running ODE solvers
+#   the code is centered around qutip, for functions that use qiskit-dynamics, 
+#   I convert objects to jnp locally
 #
 ############################################################################
 
@@ -68,19 +69,15 @@ class coupled_system:
         return pad_back_custom(qobj, self.products_to_keep, self.product_to_dressed)
         
     def run_mesolve_parrallel(self,
-                    initial_states, # truncated initial states
-                    tlist,
+                    initial_states: qutip.Qobj, # truncated initial states
+                    tlist: np.array, 
 
-                    c_ops = None,
-                    e_ops = None,
-
-                    driven_operator = None, # like self.a_trunc+self.a_trunc.dag()
-                    amp = 0.004,
-                    t_stop=None,
-                    t_rise=None,
+                    static_hamiltonian: qutip.Qobj,
+                    drive_terms: List[DriveTerm],
+                    c_ops: Union[None,List[qutip.Qobj]] = None,
+                    e_ops:Union[None,List[qutip.Qobj]] = None,
 
                     post_processing = ['pad_back'],
-                    max_workers = None,
                     ):
         '''
         This function runs mesolve on multiple initial states using multi-processing,
@@ -95,19 +92,19 @@ class coupled_system:
                                 self.product_to_dressed))
 
         results = [None] * len(initial_states)
-        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(mesolve_and_post_processing, 
-                                       rho0=initial_states[i], 
-                                       H_with_drive= [self.diag_dressed_hamiltonian] + ([[driven_operator, square_cos_with_rise_fall]] if driven_operator is not None else []),
-
-                                       tlist=tlist,
-                                       additional_args = {'w_d': self.w_d, 'amp': amp, 't_stop': t_stop, 't_rise': t_rise},
-                                       c_ops=c_ops,
-                                       e_ops = e_ops,
-
+        with concurrent.futures.ProcessPoolExecutor(max_workers=None) as executor:
+            futures = {executor.submit(ODEsolve_and_post_process, 
+                                        y0=initial_states[i], 
+                                        tlist=tlist,    
+                                        static_hamiltonian = [self.diag_dressed_hamiltonian]
+                                        drive_terms=drive_terms,
+                                        c_ops=c_ops,
+                                        e_ops = e_ops,
+                                    
+                                        method = 'mesolve',
                                         post_processing_funcs=post_processing_funcs,
                                         post_processing_args=post_processing_args,
-                                       ): i for i in range(len(initial_states))}
+                                        ): i for i in range(len(initial_states))}
             
             for future in concurrent.futures.as_completed(futures):
                 original_index = futures[future]
@@ -115,71 +112,38 @@ class coupled_system:
 
         return results
     
-    def run_mcsolve(self,
-                    initial_state,
-                    tlist,
-                    osc_decay = True,
-                    e_ops = None,
+    def run_jax_gpu_solve(self,
+                    initial_state, 
+                    tlist, 
+                    c_ops = None,
                     amp = 0.004,
                     t_stop=None,
                     t_rise=None,
                     driven_operator = None, # like self.a_trunc+self.a_trunc.dag()
                     ):
-        '''
-        This function runs mcsolve on one initial states return one qutip.solver.result
-        '''
-
-        result = qutip.mcsolve(psi0=initial_state, 
-                                   H= [self.diag_dressed_hamiltonian] + ([[driven_operator, square_cos_with_rise_fall]] if driven_operator is not None else []),
-                                   progress_bar = qutip.ui.progressbar.EnhancedTextProgressBar(),
-                                   tlist=tlist,
-                                   args = {'w_d': self.w_d, 'amp': amp, 't_stop': t_stop, 't_rise': t_rise},
-                                   c_ops=self.c_ops if osc_decay else None,
-                                   ntraj = 500,
-                                   e_ops = e_ops,
-                                   options=qutip.Options(store_states=True,num_cpus = None)
-                                   )
-        return result
-
-    def run_jax_gpu_solve(self,
-                    initial_state, 
-                    tlist, 
-                    osc_decay = True,
-                    amp = 0.004,
-                    t_stop=None,
-                    t_rise=None,
-                    driven_operator = None, # like self.a_trunc+self.a_trunc.dag()
-                    chunk_size=1,
-                    signal_sample_dt = 0.1):
         ########################################################################################
         #
         # 1) truncating through time is still needed as of Feb 18 2024, if the t_span used to
         #    call ham_solver.solve os too large you get VRAM issue (max_dt won't save it)
         #
         ########################################################################################
-
+        chunk_size=1
+        signal_sample_dt = 0.1
         initial_state = qobj_to_Array(initial_state)
-        if osc_decay:
-            ham_solver = Solver(
-                hamiltonian_operators=[qobj_to_Array(driven_operator)],
-                static_hamiltonian=2 * np.pi * qobj_to_Array(self.diag_dressed_hamiltonian),
-                static_dissipators= [qobj_to_Array(op) for op in self.c_ops],
-                hamiltonian_channels=['d0'],
-                channel_carrier_freqs={'d0': self.w_d * 2 * np.pi},
-                dt=signal_sample_dt,
-                evaluation_mode = "dense_vectorized"
-            )
+        
+        ham_solver = Solver(
+            hamiltonian_operators=[qobj_to_Array(driven_operator)],
+            static_hamiltonian=2 * np.pi * qobj_to_Array(self.diag_dressed_hamiltonian),
+            static_dissipators= [qobj_to_Array(op) for op in c_ops] if  c_ops is not None else None,
+            hamiltonian_channels=['d0'],
+            channel_carrier_freqs={'d0': self.w_d * 2 * np.pi},
+            dt=signal_sample_dt,
+            evaluation_mode = "dense_vectorized" if  c_ops is not None else "dense"
+        )
+        if c_ops != None:
             initial_state = initial_state @ initial_state.conj().T  
             initial_state = initial_state.flatten(order='F')  
-        else:
-            ham_solver = Solver(
-                hamiltonian_operators=[qobj_to_Array(driven_operator)],
-                static_hamiltonian=2 * np.pi * qobj_to_Array(self.diag_dressed_hamiltonian),
-                hamiltonian_channels=['d0'],
-                channel_carrier_freqs={'d0': self.w_d * 2 * np.pi},
-                dt=signal_sample_dt,
-                evaluation_mode = "dense"
-            )
+
         try:
             validate_and_format_initial_state(initial_state, ham_solver.model)
         except:
@@ -259,13 +223,12 @@ class coupled_system:
     def run_jax_cpu_solve(self,
                     initial_state, 
                     tlist, 
-                    osc_decay = True,
+                    c_ops = None,
                     amp = 0.004,
                     t_stop=None,
                     t_rise=None,
                     driven_operator = None, #like self.a_trunc+self.a_trunc.dag()
-                    chunk_size=1,
-                    signal_sample_dt = 0.1):
+                    ):
         ########################################################################################
         #
         # 1) truncating through time is still needed as of Feb 18 2024, if the t_span used to
@@ -274,11 +237,13 @@ class coupled_system:
         ########################################################################################
 
         
-        
+        chunk_size=1
+        signal_sample_dt = 0.1
+
         ham_solver = Solver(
             hamiltonian_operators=[qobj_to_Array(driven_operator)],
             static_hamiltonian=2 * np.pi * qobj_to_Array(self.diag_dressed_hamiltonian),
-            static_dissipators= [qobj_to_Array(op) for op in self.c_ops] if  osc_decay else None,
+            static_dissipators= [qobj_to_Array(op) for op in c_ops] if  c_ops is not None else None,
             hamiltonian_channels=['d0'],
             channel_carrier_freqs={'d0': self.w_d * 2 * np.pi},
             dt=signal_sample_dt,
@@ -286,7 +251,7 @@ class coupled_system:
         )
 
         initial_state = qobj_to_Array(initial_state)
-        if osc_decay and initial_state.shape[0] != ham_solver.model.dim**2:
+        if  c_ops is not None and initial_state.shape[0] != ham_solver.model.dim**2:
             initial_state = initial_state @ initial_state.conj().T  
 
         signals = get_qiskit_square_pulse_with_sin_squared_edges(
@@ -374,28 +339,27 @@ class fluxonium_oscillator_system:
         
 
 @dataclass
-class drive_term:
+class DriveTerm:
     driven_op: qutip.Qobj
     pulse_shape_func: Callable
     pulse_shape_args: Dict
 
 def ODEsolve_and_post_process(
-            y0,
-            static_hamiltonian,
-            drive_terms,
-            tlist, 
-            additional_args,
+            y0: qutip.Qobj,
+            tlist: np.array, 
 
-            c_ops = None,
-            e_ops = None,
+            static_hamiltonian: qutip.Qobj,
+            drive_terms: List[DriveTerm],
+            c_ops: Union[None,List[qutip.Qobj]] = None,
+            e_ops:Union[None,List[qutip.Qobj]] = None,
 
             method:str = 'mesolve',
 
-            post_processing_funcs=[],
-            post_processing_args=[],
+            post_processing_funcs:List=[],
+            post_processing_args:List=[],
             ):
     '''
-    TODO: This method should be more modular:
+    This method is be more modular:
 
     It should take in:
         a static hamiltonian, 
@@ -404,18 +368,42 @@ def ODEsolve_and_post_process(
         a list of c_ops
     '''
     static_hamiltonian = [static_hamiltonian] if type(static_hamiltonian) != list else static_hamiltonian
+    
+    H_with_drives =  static_hamiltonian + \
+          [[drive_term.driven_op, drive_term.pulse_shape_func] for drive_term in drive_terms]
+    
+    additional_args = {}
+    for drive_term in drive_terms:
+        for key in drive_term.pulse_shape_args:
+            if key in additional_args:
+                raise ValueError(f"Duplicate key found: {key}")
+            else:
+                additional_args[key] = drive_term.pulse_shape_args[key]
 
+    if method == 'mesolve':
+        result = qutip.mesolve(
+            rho0=y0,
+            H=H_with_drives,
+            tlist=tlist,
+            c_ops=c_ops,
+            e_ops = e_ops,
+            args=additional_args,
+            options=qutip.Options(store_states=True, nsteps=80000, num_cpus=1),
+            progress_bar = qutip.ui.progressbar.EnhancedTextProgressBar(),
+        )
 
-    result = qutip.mesolve(
-        H=H_with_drive,
-        rho0=rho0,
-        tlist=tlist,
-        c_ops=c_ops,
-        e_ops = e_ops,
-        args=additional_args,
-        options=qutip.Options(store_states=True, nsteps=80000, num_cpus=1),
-        progress_bar = qutip.ui.progressbar.EnhancedTextProgressBar(),
-    )
+    elif method == 'mcsolve':
+        result = qutip.mcsolve(psi0=y0, 
+                            H= H_with_drives,
+                            tlist=tlist,
+                            args = additional_args,
+                            c_ops=c_ops,
+                            e_ops = e_ops,
+                            ntraj = 500,
+                            options=qutip.Options(store_states=True,num_cpus = None),
+                            progress_bar = qutip.ui.progressbar.EnhancedTextProgressBar(),
+                            )
+
     for func, args in zip(post_processing_funcs, post_processing_args):
         result.states = [func(state, *args) for state in tqdm(result.states, desc=f"Processing states with {func.__name__}")]
 
@@ -431,7 +419,7 @@ def run_fluxonium_osc_system_mesolve_jobs(
         post_processing = ['pad_back'],
     ):
     '''
-    This function helps run mesolve of different fluxonium_oscillator_system and different initial states concurrently
+    This function helps run mesolve using the ODEsolve_and_post_process function concurrently
     Args:
         list_of_systems: list of fluxonium_oscillator_system
         list_of_kwargs: list of kwargs dictionaries used to call run_mesolve_on_driving_osc
