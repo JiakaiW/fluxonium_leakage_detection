@@ -1,27 +1,28 @@
+
 import os
+
 os.environ['JAX_JIT_PJIT_API_MERGE'] = '0'
-
-
-from bidict import bidict
-import concurrent
-from dataclasses import dataclass
-import importlib.util
-import ipywidgets as widgets
-from IPython.display import clear_output
 import jax.numpy as jnp
 from jax import jit, vmap
-import math
-import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
-import matplotlib.gridspec as gridspec
-import numpy as np
-import pickle
 import qiskit.pulse
 from qiskit_dynamics.array import Array
 Array.set_default_backend('jax')
 from qiskit_dynamics import Solver
 from qiskit_dynamics.models import HamiltonianModel, LindbladModel
 from qiskit_dynamics.solvers.solver_classes import validate_and_format_initial_state
+
+
+from bidict import bidict
+import concurrent
+import importlib.util
+import ipywidgets as widgets
+
+import math
+import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
+import matplotlib.gridspec as gridspec
+import numpy as np
+import pickle
 import qutip
 import scqubits
 import sympy as sym
@@ -29,6 +30,8 @@ from typing import List, Any, Union, Tuple
 from tqdm.notebook import tqdm
 from tqdm import tqdm
 import uuid
+
+
 
 
 ############################################################################
@@ -194,31 +197,6 @@ class fluxonium_oscillator_system:
                                    )
         return result
 
-    def prepare_for_gpu(self,driven_operator = None,signal_sample_dt = 0.1):
-        if driven_operator == None:
-            driven_operator = self.a_trunc+self.a_trunc.dag()
-        self.unitary_solver = Solver(
-                hamiltonian_operators=[qobj_to_Array(driven_operator)],
-                static_hamiltonian=2 * np.pi * qobj_to_Array(self.diag_dressed_hamiltonian),
-                hamiltonian_channels=['d0'],
-                channel_carrier_freqs={'d0': self.w_d * 2 * np.pi},
-                dt=signal_sample_dt
-            )
-        self.unitary_solver.evaluation_mode = "dense"
-        self.lindblad_solver = Solver(
-                hamiltonian_operators=[qobj_to_Array(driven_operator)],
-                static_hamiltonian=2 * np.pi * qobj_to_Array(self.diag_dressed_hamiltonian),
-                static_dissipators= [qobj_to_Array(op) for op in self.c_ops],
-                hamiltonian_channels=['d0'],
-                channel_carrier_freqs={'d0': self.w_d * 2 * np.pi},
-                dt=signal_sample_dt
-            )
-        self.lindblad_solver.evaluation_mode = "dense_vectorized" 
-        if self.unitary_solver.model.dim > 3000:
-            raise Exception('dimension too large for gpu even just for unitary evolution')
-        elif self.unitary_solver.model.dim > 52:
-            raise Exception('dimension too large for gpu evolution with superoperators')
-    
     def run_jax_gpu_solve(self,
                     initial_state, 
                     tlist, 
@@ -227,29 +205,50 @@ class fluxonium_oscillator_system:
                     t_stop=None,
                     t_rise=None,
                     driven_operator = None,
-                    chunk_size=1):
+                    chunk_size=1,
+                    signal_sample_dt = 0.1):
         ########################################################################################
         #
         # 1) truncating through time is still needed as of Feb 18 2024, if the t_span used to
         #    call ham_solver.solve os too large you get VRAM issue (max_dt won't save it)
         #
         ########################################################################################
-        self.prepare_for_gpu(driven_operator)
+        if driven_operator == None:
+            driven_operator = self.a_trunc+self.a_trunc.dag()
 
         initial_state = qobj_to_Array(initial_state)
         if osc_decay:
-            ham_solver = self.lindblad_solver
-            ham_solver.model.evaluation_mode = "dense_vectorized"
-            if initial_state.shape[0] != self.lindblad_solver.model.dim**2:
+            ham_solver = Solver(
+                hamiltonian_operators=[qobj_to_Array(driven_operator)],
+                static_hamiltonian=2 * np.pi * qobj_to_Array(self.diag_dressed_hamiltonian),
+                static_dissipators= [qobj_to_Array(op) for op in self.c_ops],
+                hamiltonian_channels=['d0'],
+                channel_carrier_freqs={'d0': self.w_d * 2 * np.pi},
+                dt=signal_sample_dt,
+                evaluation_mode = "dense_vectorized"
+            )
+            # if ham_solver.model.dim > 52:
+            #     raise Exception('dimension too large for gpu evolution with superoperators')
+            if initial_state.shape[0] != ham_solver.model.dim**2:
                 initial_state = initial_state @ initial_state.conj().T  
                 initial_state = initial_state.flatten(order='F')  
         else:
-            ham_solver = self.unitary_solver
+            ham_solver = Solver(
+                hamiltonian_operators=[qobj_to_Array(driven_operator)],
+                static_hamiltonian=2 * np.pi * qobj_to_Array(self.diag_dressed_hamiltonian),
+                hamiltonian_channels=['d0'],
+                channel_carrier_freqs={'d0': self.w_d * 2 * np.pi},
+                dt=signal_sample_dt,
+                evaluation_mode = "dense"
+            )
+            # if ham_solver.model.dim > 3500:
+            #     raise Exception('dimension too large for gpu even just for unitary evolution')
         try:
             validate_and_format_initial_state(initial_state, ham_solver.model)
         except:
             print(f"y0 shape: {initial_state.shape}, model shape {ham_solver.model.dim}")
-        max_dt = 0.5
+        
+        max_dt = 1
 
         signals = get_qiskit_square_pulse_with_sin_squared_edges(
                                                 w_d_without_2pi = self.w_d,
@@ -319,6 +318,62 @@ class fluxonium_oscillator_system:
             ode_result.times=t_results
             ode_result.states=chunk_results
             return ode_result
+
+
+
+    def run_jax_cpu_solve(self,
+                    initial_state, 
+                    tlist, 
+                    osc_decay = True,
+                    amp = 0.004,
+                    t_stop=None,
+                    t_rise=None,
+                    driven_operator = None,
+                    chunk_size=1,
+                    signal_sample_dt = 0.1):
+        ########################################################################################
+        #
+        # 1) truncating through time is still needed as of Feb 18 2024, if the t_span used to
+        #    call ham_solver.solve os too large you get VRAM issue (max_dt won't save it)
+        #
+        ########################################################################################
+        if driven_operator == None:
+            driven_operator = self.a_trunc+self.a_trunc.dag()
+
+        initial_state = qobj_to_Array(initial_state)
+        
+        ham_solver = Solver(
+            hamiltonian_operators=[qobj_to_Array(driven_operator)],
+            static_hamiltonian=2 * np.pi * qobj_to_Array(self.diag_dressed_hamiltonian),
+            static_dissipators= [qobj_to_Array(op) for op in self.c_ops] if  osc_decay else None,
+            hamiltonian_channels=['d0'],
+            channel_carrier_freqs={'d0': self.w_d * 2 * np.pi},
+            dt=signal_sample_dt,
+            evaluation_mode = "sparse"
+        )
+        if osc_decay and initial_state.shape[0] != ham_solver.model.dim**2:
+            initial_state = initial_state @ initial_state.conj().T  
+
+        signals = get_qiskit_square_pulse_with_sin_squared_edges(
+                                                w_d_without_2pi = self.w_d,
+                                                amp_without_2pi = amp,
+                                                t_rise = t_rise if t_rise is not None else 0,
+                                                t_stop = t_stop if t_stop is not None else tlist[-1]
+                                                )
+
+        result = ham_solver.solve(
+                y0=initial_state, 
+                t_span=[0, tlist[-1]],
+                signals=signals, 
+                method='jax_odeint', 
+                t_eval=tlist, 
+            )
+
+        ode_result = qutip.solver.Result()
+        ode_result.times= result.tlist
+        ode_result.states= [qutip.Qobj(state) for state in result.y]
+        return ode_result
+
 
 
 
@@ -721,10 +776,6 @@ def compute_and_store_2_level_dm(args):
 
 
 def qobj_to_Array(matrix):
-    
-    from qiskit_dynamics.array import Array
-    Array.set_default_backend('jax')
-
     if type(matrix) == qutip.qobj.Qobj:
         return Array(matrix.full()) 
     else:

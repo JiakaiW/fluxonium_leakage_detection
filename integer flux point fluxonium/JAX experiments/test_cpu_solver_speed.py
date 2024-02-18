@@ -1,3 +1,10 @@
+
+import os 
+os.environ['JAX_JIT_PJIT_API_MERGE'] = '0'
+import jax
+jax.config.update("jax_enable_x64", True)
+jax.config.update('jax_platform_name', 'cpu')
+
 import sys
 sys.path.append('../')
 from utils import *
@@ -14,10 +21,10 @@ if __name__ == '__main__':
         drive_transition=((0,0),(0,1))
     )
 
-    result = system.run_mesolve_on_driving_osc(
-        initial_states = [system.truncate_function(qutip.basis(system.hilbertspace.dimension, 1))], 
-        tlist  =  np.linspace(0,100, 100), 
+
+    result = system.run_jax_cpu_solve(
+        initial_state = system.truncate_function(qutip.basis(system.hilbertspace.dimension, 1)), 
+        tlist  =  jnp.linspace(0,100, 100), 
         osc_decay = True,
-        post_processing = [],
         amp = 0.003
         )
