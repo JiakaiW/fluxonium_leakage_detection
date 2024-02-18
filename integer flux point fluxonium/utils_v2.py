@@ -43,14 +43,28 @@ import uuid
 #
 ############################################################################
 
-class coupled_system:
+
+@dataclass
+class DriveTerm:
+    driven_op: qutip.Qobj
+    pulse_shape_func: Callable
+    pulse_shape_args: Dict
+
+
+class CoupledSystem:
     '''
     A parent class for quantum systems involving qubits and oscillators,
-    designed to encapsulate common functionalities.
+    
+    This class is meant to be very generic, any specific setup can inherit from this 
+        class and define commonly used attributes in the child class
     '''
     def __init__(self,
                  hilbertspace,
-                 products_to_keep):
+                 products_to_keep,
+                 qbt_position,
+                 computaional_states):
+        self.qbt_position = qbt_position
+        self.computaional_states = computaional_states
         self.hilbertspace = hilbertspace
         self.hilbertspace.generate_lookup()
         self.product_to_dressed = generate_single_mapping(self.hilbertspace.hamiltonian())
@@ -71,8 +85,6 @@ class coupled_system:
     def run_mesolve_parrallel(self,
                     initial_states: qutip.Qobj, # truncated initial states
                     tlist: np.array, 
-
-                    static_hamiltonian: qutip.Qobj,
                     drive_terms: List[DriveTerm],
                     c_ops: Union[None,List[qutip.Qobj]] = None,
                     e_ops:Union[None,List[qutip.Qobj]] = None,
@@ -96,7 +108,8 @@ class coupled_system:
             futures = {executor.submit(ODEsolve_and_post_process, 
                                         y0=initial_states[i], 
                                         tlist=tlist,    
-                                        static_hamiltonian = [self.diag_dressed_hamiltonian]
+
+                                        static_hamiltonian = [self.diag_dressed_hamiltonian],
                                         drive_terms=drive_terms,
                                         c_ops=c_ops,
                                         e_ops = e_ops,
@@ -112,173 +125,12 @@ class coupled_system:
 
         return results
     
-    def run_jax_gpu_solve(self,
-                    initial_state, 
-                    tlist, 
-                    c_ops = None,
-                    amp = 0.004,
-                    t_stop=None,
-                    t_rise=None,
-                    driven_operator = None, # like self.a_trunc+self.a_trunc.dag()
-                    ):
-        ########################################################################################
-        #
-        # 1) truncating through time is still needed as of Feb 18 2024, if the t_span used to
-        #    call ham_solver.solve os too large you get VRAM issue (max_dt won't save it)
-        #
-        ########################################################################################
-        chunk_size=1
-        signal_sample_dt = 0.1
-        initial_state = qobj_to_Array(initial_state)
-        
-        ham_solver = Solver(
-            hamiltonian_operators=[qobj_to_Array(driven_operator)],
-            static_hamiltonian=2 * np.pi * qobj_to_Array(self.diag_dressed_hamiltonian),
-            static_dissipators= [qobj_to_Array(op) for op in c_ops] if  c_ops is not None else None,
-            hamiltonian_channels=['d0'],
-            channel_carrier_freqs={'d0': self.w_d * 2 * np.pi},
-            dt=signal_sample_dt,
-            evaluation_mode = "dense_vectorized" if  c_ops is not None else "dense"
-        )
-        if c_ops != None:
-            initial_state = initial_state @ initial_state.conj().T  
-            initial_state = initial_state.flatten(order='F')  
-
-        try:
-            validate_and_format_initial_state(initial_state, ham_solver.model)
-        except:
-            print(f"y0 shape: {initial_state.shape}, model shape {ham_solver.model.dim}")
-        
-
-        signals = get_qiskit_square_pulse_with_sin_squared_edges(
-                                                w_d_without_2pi = self.w_d,
-                                                amp_without_2pi = amp,
-                                                t_rise = t_rise if t_rise is not None else 0,
-                                                t_stop = t_stop if t_stop is not None else tlist[-1]
-                                                )
-
-        if chunk_size >= 1:
-            ###################################
-            # Here the tlist of the result is still the original tlist
-            ###################################
-            tlist_chunks = [tlist[i:i + chunk_size] for i in range(0, len(tlist), chunk_size)]
-            current_state = initial_state
-            chunk_results = []
-
-            for chunk in tqdm(tlist_chunks,desc=f"solving through chunks"):
-                result = ham_solver.solve(
-                    y0=current_state, 
-                    t_span=[chunk[0], chunk[-1]],
-                    signals=signals, 
-                    method='jax_expm_parallel', 
-                    t_eval=jnp.linspace(chunk[0], chunk[-1], len(chunk)), 
-                    max_dt=1 
-                )
-
-                if chunk_results == []:
-                    chunk_results.extend(result.y)
-                else:
-                    chunk_results.extend(result.y[1:])
-
-                current_state = result.y[-1]
-            ode_result = qutip.solver.Result()
-            ode_result.times=tlist
-            ode_result.states=chunk_results
-            return ode_result
-        else:
-            ###################################
-            # Here the tlist of the result is a new one
-            ###################################
-            current_state = initial_state
-            chunk_results = []
-            t_results = []
-            total_time = tlist[-1] - tlist[0]
-            num_intervals = int(len(tlist) / chunk_size)
-            interval_length = total_time / num_intervals
-
-            for i in tqdm(range(num_intervals),desc=f"solving through chunks"):
-                t_start = tlist[0] + i * interval_length
-                t_end = t_start + interval_length
-                t_eval_interval = jnp.array([t_end])
-                print('solving with jax_expm_parallel')
-                result = ham_solver.solve(
-                    y0=current_state,
-                    t_span=[t_start, t_end],
-                    signals=signals,
-                    method='jax_expm_parallel',
-                    t_eval=t_eval_interval,
-                    max_dt=1
-                )
-
-                chunk_results.append(result.y[-1])
-                t_results.append(t_eval_interval[-1])
-                current_state = result.y[-1] 
-            
-            ode_result = qutip.solver.Result()
-            ode_result.times=t_results
-            ode_result.states=chunk_results
-            return ode_result
 
 
-    def run_jax_cpu_solve(self,
-                    initial_state, 
-                    tlist, 
-                    c_ops = None,
-                    amp = 0.004,
-                    t_stop=None,
-                    t_rise=None,
-                    driven_operator = None, #like self.a_trunc+self.a_trunc.dag()
-                    ):
-        ########################################################################################
-        #
-        # 1) truncating through time is still needed as of Feb 18 2024, if the t_span used to
-        #    call ham_solver.solve os too large you get VRAM issue (max_dt won't save it)
-        #
-        ########################################################################################
 
-        
-        chunk_size=1
-        signal_sample_dt = 0.1
-
-        ham_solver = Solver(
-            hamiltonian_operators=[qobj_to_Array(driven_operator)],
-            static_hamiltonian=2 * np.pi * qobj_to_Array(self.diag_dressed_hamiltonian),
-            static_dissipators= [qobj_to_Array(op) for op in c_ops] if  c_ops is not None else None,
-            hamiltonian_channels=['d0'],
-            channel_carrier_freqs={'d0': self.w_d * 2 * np.pi},
-            dt=signal_sample_dt,
-            evaluation_mode = "sparse"
-        )
-
-        initial_state = qobj_to_Array(initial_state)
-        if  c_ops is not None and initial_state.shape[0] != ham_solver.model.dim**2:
-            initial_state = initial_state @ initial_state.conj().T  
-
-        signals = get_qiskit_square_pulse_with_sin_squared_edges(
-                                                w_d_without_2pi = self.w_d,
-                                                amp_without_2pi = amp,
-                                                t_rise = t_rise if t_rise is not None else 0,
-                                                t_stop = t_stop if t_stop is not None else tlist[-1]
-                                                )
-
-        result = ham_solver.solve(
-                y0=initial_state, 
-                t_span=[0, tlist[-1]],
-                signals=signals, 
-                method='jax_odeint', 
-                t_eval=tlist, 
-            )
-
-        ode_result = qutip.solver.Result()
-        ode_result.times= result.tlist
-        ode_result.states= [qutip.Qobj(state) for state in result.y]
-        return ode_result
-
-
-class fluxonium_oscillator_system:
+class FluxoniumOscillatorSystem:
     '''
-    Because the code for initializing the system, do truncation, and run mesovle is re-used so often, 
-    I decide to create a class for it
+    To model leakage detection of 12 fluxonium
     '''
     def __init__(self,
                 computaional_states:str, # = '0,1' or '1,2'
@@ -308,21 +160,19 @@ class fluxonium_oscillator_system:
         hilbertspace = scqubits.HilbertSpace([self.qbt, self.osc])
         hilbertspace.add_interaction(g_strength=g_strength,op1=self.qbt.n_operator,op2=self.osc.creation_operator,add_hc=True)
 
-        self.computaional_states = [int(computaional_states[0]),int(computaional_states[-1])]
-        '''
-        Define how to truncate
-        '''
         if products_to_keep is None:
             products_to_keep = [[ql, ol] for ql in [1,2,3] for ol in range(10) ] \
                                 + [[ql, ol] for ql in [0] for ol in range(30) ]
 
         super().__init__(hilbertspace = hilbertspace,
-                         products_to_keep = products_to_keep)
-        '''
-        Truncate objects
-        '''
+                         products_to_keep = products_to_keep,
+                         qbt_position = 0,
+                        computaional_states = [int(computaional_states[0]),int(computaional_states[-1])])
+
         self.a = qutip.Qobj(self.hilbertspace.op_in_dressed_eigenbasis(self.osc.annihilation_operator)[:, :])
         self.a_trunc = self.truncate_function(self.a)
+        self.driven_operator =   self.a_trunc+self.a_trunc.dag()
+        self.c_ops = [np.sqrt(kappa) * self.a_trunc]
 
         if w_d!= None:
             self.w_d = w_d
@@ -335,14 +185,68 @@ class fluxonium_oscillator_system:
         else:
             raise Exception('computaional_states not supported')
         
-        self.c_ops = [np.sqrt(kappa) * self.a_trunc]
+        
         
 
-@dataclass
-class DriveTerm:
-    driven_op: qutip.Qobj
-    pulse_shape_func: Callable
-    pulse_shape_args: Dict
+class FluxoniumOscillatorFilterSystem:
+    '''
+    To model leakage detection of 12 fluxonium with purcell filter
+    '''
+    def __init__(self,
+                computaional_states:str, # = '0,1' or '1,2'
+                drive_transition: Tuple[int] = None,
+
+                EJ:float = 3,
+                EC:float = 0.6,
+                EL:float = 0.13,
+                qubit_level:float = 30,
+                
+                
+                Er:float = 7.2622522,
+                osc_level:float = 30,
+                kappa = 0.001,
+
+                g_strength:float = 0.3,
+
+                products_to_keep: List[List[int]]= None,
+                w_d:float = None
+                ):
+        '''
+        Initialize objects before truncation
+        '''
+        
+        self.qbt = scqubits.Fluxonium(EJ=EJ,EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
+        self.osc = scqubits.Oscillator(E_osc=Er,truncated_dim=osc_level)
+        hilbertspace = scqubits.HilbertSpace([self.qbt, self.osc])
+        hilbertspace.add_interaction(g_strength=g_strength,op1=self.qbt.n_operator,op2=self.osc.creation_operator,add_hc=True)
+
+        if products_to_keep is None:
+            products_to_keep = [[ql, ol] for ql in [1,2,3] for ol in range(10) ] \
+                                + [[ql, ol] for ql in [0] for ol in range(30) ]
+
+        super().__init__(hilbertspace = hilbertspace,
+                         products_to_keep = products_to_keep,
+                         qbt_position = 0,
+                        computaional_states = [int(computaional_states[0]),int(computaional_states[-1])])
+
+        self.a = qutip.Qobj(self.hilbertspace.op_in_dressed_eigenbasis(self.osc.annihilation_operator)[:, :])
+        self.a_trunc = self.truncate_function(self.a)
+        self.driven_operator =   self.a_trunc+self.a_trunc.dag()
+        self.c_ops = [np.sqrt(kappa) * self.a_trunc]
+        
+        if w_d!= None:
+            self.w_d = w_d
+        elif drive_transition!= None:
+            self.w_d = transition_frequency(self.hilbertspace,self.product_to_dressed[drive_transition[0]],self.product_to_dressed[drive_transition[1]] ) 
+        elif computaional_states == '1,2':
+            self.w_d = transition_frequency(self.hilbertspace,self.product_to_dressed[(0,0)],self.product_to_dressed[(0,1)] ) 
+        elif computaional_states == '0,1':
+            self.w_d = transition_frequency(self.hilbertspace,self.product_to_dressed[(2,0)],self.product_to_dressed[(2,1)] ) 
+        else:
+            raise Exception('computaional_states not supported')
+        
+     
+
 
 def ODEsolve_and_post_process(
             y0: qutip.Qobj,
@@ -354,7 +258,6 @@ def ODEsolve_and_post_process(
             e_ops:Union[None,List[qutip.Qobj]] = None,
 
             method:str = 'mesolve',
-
             post_processing_funcs:List=[],
             post_processing_args:List=[],
             ):
@@ -412,8 +315,8 @@ def ODEsolve_and_post_process(
 
 
 
-def run_fluxonium_osc_system_mesolve_jobs(
-        list_of_systems: List[fluxonium_oscillator_system],
+def run_parallel_ODEsolve_and_post_process_jobs_with_different_systems(
+        list_of_systems: List[CoupledSystem],
         list_of_kwargs: list[Any],
         max_workers = None,
         post_processing = ['pad_back'],
@@ -421,36 +324,26 @@ def run_fluxonium_osc_system_mesolve_jobs(
     '''
     This function helps run mesolve using the ODEsolve_and_post_process function concurrently
     Args:
-        list_of_systems: list of fluxonium_oscillator_system
-        list_of_kwargs: list of kwargs dictionaries used to call run_mesolve_on_driving_osc
-            a single kwargs should be a dictionary like {'intial_state',
+        list_of_systems: list of CoupledSystem
+        list_of_kwargs: list of kwargs dictionaries used to call ODEsolve_and_post_process
+            a single kwargs should be a dictionary like {'y0',
                                                         'tlist',
-                                                        'osc_decay' : False,
-                                                        'e_ops' : None,
-                                                        'amp' : 0.004,
-                                                        't_stop':None,
-                                                        'driven_operator': system.a_trunc+system.a_trunc.dag()}
+
+                                                        'drive_terms',
+                                                        'c_ops',
+                                                        'e_ops'
+                                                        }
     '''
     assert len(list_of_systems) == len(list_of_kwargs)
-    # Step-1, define functions
-    list_of_H_with_drive = []
-    list_of_additional_args = []
-    for system,kwargs in zip(list_of_systems,list_of_kwargs):
-        driven_operator = kwargs.get('driven_operator',system.a_trunc+system.a_trunc.dag())
-        H_with_drive = [
-            system.diag_dressed_hamiltonian,
-            [driven_operator, square_cos_with_rise_fall],
-        ]
-        list_of_H_with_drive.append(H_with_drive)
-        list_of_additional_args.append({'w_d': system.w_d, 'amp': kwargs['amp'], 't_stop': kwargs.get('t_stop',None), 't_rise': kwargs.get('t_rise',None)})
-
+    
     results = [None] * len(list_of_systems)
     with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = {}
         for i in range(len(list_of_systems)):
+
+
             post_processing_funcs = []
             post_processing_args = []
-            
             if 'pad_back' in post_processing:
                 post_processing_funcs.append(pad_back_custom)
                 post_processing_args.append((list_of_systems[i].products_to_keep, 
@@ -459,23 +352,22 @@ def run_fluxonium_osc_system_mesolve_jobs(
                 post_processing_funcs.append(dressed_to_2_level_dm)
                 post_processing_args.append((
                                             list_of_systems[i].product_to_dressed,
-                                            list_of_systems[i].qbt.truncated_dim, 
-                                            list_of_systems[i].osc.truncated_dim,
+                                            list_of_systems[i].qbt_position, 
                                             list_of_systems[i].computaional_states[0],
                                             list_of_systems[i].computaional_states[1],
                                             None))
             future = executor.submit(
-                mesolve_and_post_processing, 
-                rho0=list_of_kwargs[i]['intial_state'], 
-                H_with_drive=list_of_H_with_drive[i],
+                ODEsolve_and_post_process, 
+                y0=list_of_kwargs[i]['y0'], 
                 tlist=list_of_kwargs[i]['tlist'], 
-                additional_args=list_of_additional_args[i],
-                c_ops=list_of_systems[i].c_ops if list_of_kwargs[i]['osc_decay'] else None,
+
+                static_hamiltonian=[list_of_systems[i].diag_dressed_hamiltonian],
+                drive_terms=list_of_kwargs[i].get('drive_terms', None),
+                c_ops=list_of_kwargs[i].get('c_ops', None),
                 e_ops=list_of_kwargs[i].get('e_ops', None),
 
                 post_processing_funcs=post_processing_funcs,
-                post_processing_args=post_processing_args,
-            )
+                post_processing_args=post_processing_args)
             futures[future] = i
         
         for future in concurrent.futures.as_completed(futures):
@@ -483,6 +375,133 @@ def run_fluxonium_osc_system_mesolve_jobs(
             results[original_index] = future.result()
     return results
 
+
+
+def run_jax_solve(w_d,
+                static_hamiltonian: qutip.Qobj,   
+                initial_state, 
+                tlist, 
+                c_ops = None,
+                mode = 'gpu',
+                
+                amp = 0.004,
+                t_stop=None,
+                t_rise=None,
+                driven_operator = None, # like a_trunc+a_trunc.dag()
+                ):
+    ########################################################################################
+    #
+    # 1) truncating through time is still needed as of Feb 18 2024, if the t_span used to
+    #    call ham_solver.solve os too large you get VRAM issue (max_dt won't save it)
+    #
+    ########################################################################################
+    
+    signal_sample_dt = 0.1
+    
+    if mode == 'cpu':
+        evaluation_mode =  "sparse"
+    elif mode == 'gpu':
+        evaluation_mode = "dense_vectorized" if  c_ops is not None else "dense"
+    else:
+        raise Exception(f'mode not supported: mode: {mode}')
+    
+    ham_solver = Solver(
+        hamiltonian_operators=[qobj_to_Array(driven_operator)],
+        static_hamiltonian=2 * np.pi * qobj_to_Array(static_hamiltonian),
+        static_dissipators= [qobj_to_Array(op) for op in c_ops] if  c_ops is not None else None,
+        hamiltonian_channels=['d0'],
+        channel_carrier_freqs={'d0': w_d * 2 * np.pi},
+        dt=signal_sample_dt,
+        evaluation_mode = evaluation_mode
+    )
+
+    initial_state = qobj_to_Array(initial_state)
+    if c_ops != None:
+        initial_state = initial_state @ initial_state.conj().T  
+        if evaluation_mode == "dense_vectorized":
+            initial_state = initial_state.flatten(order='F')  
+
+    signals = get_qiskit_square_pulse_with_sin_squared_edges(
+                                            w_d_without_2pi = w_d,
+                                            amp_without_2pi = amp,
+                                            t_rise = t_rise if t_rise is not None else 0,
+                                            t_stop = t_stop if t_stop is not None else tlist[-1]
+                                            )
+    if mode == 'cpu':
+        result = ham_solver.solve(
+                y0=initial_state, 
+                t_span=[0, tlist[-1]],
+                signals=signals, 
+                method='jax_odeint', 
+                t_eval=tlist, 
+            )
+        tlist = result.tlist
+        states = result.y
+
+    elif mode == 'gpu':
+        chunk_size=1
+        if chunk_size >= 1:
+            ###################################
+            # Here the tlist of the result is still the original tlist
+            ###################################
+            tlist_chunks = [tlist[i:i + chunk_size] for i in range(0, len(tlist), chunk_size)]
+            current_state = initial_state
+            chunk_results = []
+
+            for chunk in tqdm(tlist_chunks,desc=f"solving through chunks"):
+                result = ham_solver.solve(
+                    y0=current_state, 
+                    t_span=[chunk[0], chunk[-1]],
+                    signals=signals, 
+                    method='jax_expm_parallel', 
+                    t_eval=jnp.linspace(chunk[0], chunk[-1], len(chunk)), 
+                    max_dt=1 
+                )
+
+                if chunk_results == []:
+                    chunk_results.extend(result.y)
+                else:
+                    chunk_results.extend(result.y[1:])
+
+                current_state = result.y[-1]
+
+            states=chunk_results
+        else:
+            ###################################
+            # Here the tlist of the result is a new one
+            ###################################
+            current_state = initial_state
+            chunk_results = []
+            t_results = []
+            total_time = tlist[-1] - tlist[0]
+            num_intervals = int(len(tlist) / chunk_size)
+            interval_length = total_time / num_intervals
+
+            for i in tqdm(range(num_intervals),desc=f"solving through chunks"):
+                t_start = tlist[0] + i * interval_length
+                t_end = t_start + interval_length
+                t_eval_interval = jnp.array([t_end])
+                print('solving with jax_expm_parallel')
+                result = ham_solver.solve(
+                    y0=current_state,
+                    t_span=[t_start, t_end],
+                    signals=signals,
+                    method='jax_expm_parallel',
+                    t_eval=t_eval_interval,
+                    max_dt=1
+                )
+
+                chunk_results.append(result.y[-1])
+                t_results.append(t_eval_interval[-1])
+                current_state = result.y[-1] 
+            
+            tlist=t_results
+            states=chunk_results
+        
+    ode_result = qutip.solver.Result()
+    ode_result.times= tlist
+    ode_result.states= [qutip.Qobj(state) for state in states]
+    return ode_result
 
 
 
@@ -493,7 +512,7 @@ def run_fluxonium_osc_system_mesolve_jobs(
 ############################################################################
 #
 #
-# Ancilliary functions about pulse shaping
+# Ancilliary functions about pulse shaping and time dynamics
 #
 #
 ############################################################################
@@ -523,7 +542,7 @@ def square_pulse_with_rise_fall(t, args):
     else:  # After pulse end
         return 0
 
-def get_qiskit_square_pulse_with_sin_squared_edges(w_d_without_2pi,amp_without_2pi = 0.03, t_rise = 15,t_stop = 100, draw = False):
+def get_qiskit_square_pulse_with_sin_squared_edges(amp_without_2pi = 0.03, t_rise = 15,t_stop = 100):
     t_square =  t_stop - 2 * t_rise
     signal_sample_dt = 0.1 # Sample rate of the backend in ns.
     base_drive_amplitude = amp_without_2pi * 2 * np.pi
@@ -560,20 +579,20 @@ def get_qiskit_square_pulse_with_sin_squared_edges(w_d_without_2pi,amp_without_2
                 ), 
                 qiskit.pulse.DriveChannel(0)
             )
-    if draw:
-        square.draw()
-        from qiskit_dynamics.pulse import InstructionToSignals
-        converter = InstructionToSignals(signal_sample_dt, carriers={"d0": carrier_freq})
-        signals = converter.get_signals(square)
-        fig, axs = plt.subplots(1, 2, figsize=(10, 4.5))
-        for ax, title in zip(axs, ["envelope", "signal"]):
-            signals[0].draw(0, tot_time, 2000, title, axis=ax)
-            ax.set_xlabel("Time (ns)")
-            ax.set_ylabel("Amplitude")
-            ax.set_title(title)
     return square
 
-
+def draw_qiskit_pulse(p, carrier_freq, t_tot):
+    p.draw()
+    signal_sample_dt = 0.1
+    from qiskit_dynamics.pulse import InstructionToSignals
+    converter = InstructionToSignals(signal_sample_dt, carriers={"d0": carrier_freq})
+    signals = converter.get_signals(p)
+    fig, axs = plt.subplots(1, 2, figsize=(10, 4.5))
+    for ax, title in zip(axs, ["envelope", "signal"]):
+        signals[0].draw(0, t_tot, 2000, title, axis=ax)
+        ax.set_xlabel("Time (ns)")
+        ax.set_ylabel("Amplitude")
+        ax.set_title(title)
 
 
 ############################################################################
@@ -585,11 +604,16 @@ def get_qiskit_square_pulse_with_sin_squared_edges(w_d_without_2pi,amp_without_2
 ############################################################################
 
 def truncate_custom(qobj: qutip.Qobj, products_to_keep: list, product_to_dressed: dict) -> qutip.Qobj:
-    indices_to_keep = [dressed_level for (qubit_level, oscillator_level), dressed_level in product_to_dressed.items() if [qubit_level, oscillator_level] in products_to_keep]
+    products_to_keep_tuples = [tuple(product) for product in products_to_keep]
+    
+    # Find indices to keep based on matching products_to_keep with keys in product_to_dressed
+    indices_to_keep = [dressed_level for product, dressed_level in product_to_dressed.items() 
+                       if product in products_to_keep_tuples]
     try:
         indices_to_keep.sort()
     except:
         print(indices_to_keep)
+
     if qobj.shape[1] == 1:  # is ket
         truncated_vector = qobj.full()[indices_to_keep, :]
         return qutip.Qobj(truncated_vector)
@@ -601,7 +625,9 @@ def pad_back_custom(qobj: qutip.Qobj, products_to_keep: Union[list,None], produc
     if products_to_keep == None:
         # for compatibility
         return qobj
-    indices_to_keep = [dressed_level for (qubit_level, oscillator_level), dressed_level in product_to_dressed.items() if [qubit_level, oscillator_level] in products_to_keep]
+    products_to_keep_tuples = [tuple(product) for product in products_to_keep]
+    indices_to_keep = [dressed_level for product, dressed_level in product_to_dressed.items() 
+                       if product in products_to_keep_tuples]
     indices_to_keep.sort()
 
     full_dimension = max(product_to_dressed.values()) + 1
@@ -748,22 +774,47 @@ def find_dominant_frequency(expectation,tlist,dominant_frequency_already_found =
 
 
 
-def dressed_to_2_level_dm(dressed_dm,product_to_dressed, qubit_level, osc_level,computational_0,computational_1,products_to_keep=None):
+def dressed_to_2_level_dm(dressed_dm: qutip.Qobj, 
+                        product_to_dressed: dict, 
+                        qbt_position: int,
+                        computational_0: int,
+                        computational_1: int,
+                        products_to_keep=None) -> qutip.Qobj:
+    """
+    Convert a dressed density matrix to a multi-level density matrix for specified computational states,
+    inferring subsystem dimensions from product_to_dressed.
+
+    Parameters:
+    - dressed_dm: The dressed density matrix as a qutip.Qobj.
+    - product_to_dressed: Mapping from product states to dressed states indices.
+    - qbt_position: which of the subsystem is the qubit
+    - computational_0, computational_1: indicate which two levels of the qubit are the computational states.
+    - products_to_keep: Optional list of product states to keep.
+
+    Returns:
+    - qutip.Qobj representing the reduced density matrix for specified computational states.
+    """
     dressed_dm_data = pad_back_custom(dressed_dm, products_to_keep, product_to_dressed)
     if dressed_dm_data.shape[1] == 1:
         dressed_dm_data = qutip.ket2dm(dressed_dm_data)
     dressed_dm_data = dressed_dm_data.full()
-    rho_product = np.zeros((qubit_level * osc_level, qubit_level * osc_level), dtype=complex)
-    for (ql, ol), dressed_level in product_to_dressed.items():
-        index1 = ql * osc_level + ol
-        # Loop again to populate the density matrix
-        for (ql2, ol2), dressed_level2 in product_to_dressed.items():
-            index2 = ql2 * osc_level + ol2
+
+    # Infer subsystem dimensions
+    subsystem_dims = [max(indexes) + 1 for indexes in zip(*product_to_dressed.keys())]
+
+    rho_product = np.zeros((np.prod(subsystem_dims), np.prod(subsystem_dims)), dtype=complex)
+
+    for product_state, dressed_index1 in product_to_dressed.items():
+        index1 = sum([product_state[i] * int(np.prod(subsystem_dims[i+1:])) for i in range(len(subsystem_dims))])
+        for product_state2, dressed_index2 in product_to_dressed.items():
+            index2 = sum([product_state2[j] * int(np.prod(subsystem_dims[j+1:])) for j in range(len(subsystem_dims))])
             # TODO  the order of product_state and product_state2 doesn't make sense to me, but it produces the right result. :(
-            element = dressed_dm_data[dressed_level, dressed_level2]
+            element = dressed_dm_data[dressed_index1, dressed_index2]
             rho_product[index1, index2] += element
-    rho_product = qutip.Qobj(rho_product, dims=[[qubit_level, osc_level], [qubit_level, osc_level]])
-    qubit_rho = rho_product.ptrace(0)
+
+    rho_product = qutip.Qobj(rho_product, dims=[subsystem_dims, subsystem_dims])
+    
+    qubit_rho = rho_product.ptrace(qbt_position)
 
     rho_2_level = qutip.Qobj(np.array([
             [qubit_rho[computational_0, computational_0],qubit_rho[computational_0, computational_1]],
@@ -771,14 +822,6 @@ def dressed_to_2_level_dm(dressed_dm,product_to_dressed, qubit_level, osc_level,
         ]),dims=[[2],[2]])
 
     return rho_2_level
-    
-def compute_and_store_2_level_dm(args):
-    results,file_name, i, j, product_to_dressed, qubit_level, osc_level,computational_0, computational_1,products_to_keep  = args
-    
-    rho_2_level = dressed_to_2_level_dm(results[i].states[j], product_to_dressed, qubit_level, osc_level, computational_0, computational_1,products_to_keep)
-    
-    with open(file_name, 'wb') as f:
-        pickle.dump(rho_2_level, f)
 
 
 def qobj_to_Array(matrix):
