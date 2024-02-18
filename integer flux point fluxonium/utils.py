@@ -1,3 +1,7 @@
+import os
+os.environ['JAX_JIT_PJIT_API_MERGE'] = '0'
+
+
 from bidict import bidict
 import concurrent
 from dataclasses import dataclass
@@ -11,10 +15,16 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import matplotlib.gridspec as gridspec
 import numpy as np
-import os
 import pickle
+import qiskit.pulse
+from qiskit_dynamics.array import Array
+Array.set_default_backend('jax')
+from qiskit_dynamics import Solver
+from qiskit_dynamics.models import HamiltonianModel, LindbladModel
+from qiskit_dynamics.solvers.solver_classes import validate_and_format_initial_state
 import qutip
 import scqubits
+import sympy as sym
 from typing import List, Any, Union, Tuple
 from tqdm.notebook import tqdm
 from tqdm import tqdm
@@ -76,9 +86,9 @@ class fluxonium_oscillator_system:
         '''
         self.a = qutip.Qobj(self.hilbertspace.op_in_dressed_eigenbasis(self.osc.annihilation_operator)[:, :])
         self.a_trunc = self.truncate_function(self.a)
-        (evals,) = self.hilbertspace["evals"]
+        self.evals = self.hilbertspace["evals"][0]
         self.diag_dressed_hamiltonian = self.truncate_function(qutip.Qobj((
-                2 * np.pi * qutip.Qobj(np.diag(evals),
+                2 * np.pi * qutip.Qobj(np.diag(self.evals),
                 dims=[self.hilbertspace.subsystem_dims] * 2)
         )[:, :]))
         if w_d!= None:
@@ -184,6 +194,242 @@ class fluxonium_oscillator_system:
                                    )
         return result
 
+    def prepare_for_gpu(self,driven_operator = None,signal_sample_dt = 0.1):
+        if driven_operator == None:
+            driven_operator = self.a_trunc+self.a_trunc.dag()
+        self.unitary_solver = Solver(
+                hamiltonian_operators=[qobj_to_Array(driven_operator)],
+                static_hamiltonian=2 * np.pi * qobj_to_Array(self.diag_dressed_hamiltonian),
+                hamiltonian_channels=['d0'],
+                channel_carrier_freqs={'d0': self.w_d * 2 * np.pi},
+                dt=signal_sample_dt
+            )
+        self.unitary_solver.evaluation_mode = "dense"
+        self.lindblad_solver = Solver(
+                hamiltonian_operators=[qobj_to_Array(driven_operator)],
+                static_hamiltonian=2 * np.pi * qobj_to_Array(self.diag_dressed_hamiltonian),
+                static_dissipators= [qobj_to_Array(op) for op in self.c_ops],
+                hamiltonian_channels=['d0'],
+                channel_carrier_freqs={'d0': self.w_d * 2 * np.pi},
+                dt=signal_sample_dt
+            )
+        self.lindblad_solver.evaluation_mode = "dense_vectorized" 
+        if self.unitary_solver.model.dim > 3000:
+            raise Exception('dimension too large for gpu even just for unitary evolution')
+        elif self.unitary_solver.model.dim > 52:
+            raise Exception('dimension too large for gpu evolution with superoperators')
+    
+    def run_jax_gpu_solve(self,
+                    initial_state, 
+                    tlist, 
+                    osc_decay = True,
+                    amp = 0.004,
+                    t_stop=None,
+                    t_rise=None,
+                    driven_operator = None,
+                    chunk_size=1):
+        ########################################################################################
+        #
+        # 1) truncating through time is still needed as of Feb 18 2024, if the t_span used to
+        #    call ham_solver.solve os too large you get VRAM issue (max_dt won't save it)
+        #
+        ########################################################################################
+        self.prepare_for_gpu(driven_operator)
+
+        initial_state = qobj_to_Array(initial_state)
+        if osc_decay:
+            ham_solver = self.lindblad_solver
+            ham_solver.model.evaluation_mode = "dense_vectorized"
+            if initial_state.shape[0] != self.lindblad_solver.model.dim**2:
+                initial_state = initial_state @ initial_state.conj().T  
+                initial_state = initial_state.flatten(order='F')  
+        else:
+            ham_solver = self.unitary_solver
+        try:
+            validate_and_format_initial_state(initial_state, ham_solver.model)
+        except:
+            print(f"y0 shape: {initial_state.shape}, model shape {ham_solver.model.dim}")
+        max_dt = 0.5
+
+        signals = get_qiskit_square_pulse_with_sin_squared_edges(
+                                                w_d_without_2pi = self.w_d,
+                                                amp_without_2pi = amp,
+                                                t_rise = t_rise if t_rise is not None else 0,
+                                                t_stop = t_stop if t_stop is not None else tlist[-1]
+                                                )
+
+        if chunk_size >= 1:
+            ###################################
+            # Here the tlist of the result is still the original tlist
+            ###################################
+            tlist_chunks = [tlist[i:i + chunk_size] for i in range(0, len(tlist), chunk_size)]
+            current_state = initial_state
+            chunk_results = []
+
+            for chunk in tqdm(tlist_chunks,desc=f"solving through chunks"):
+                result = ham_solver.solve(
+                    y0=current_state, 
+                    t_span=[chunk[0], chunk[-1]],
+                    signals=signals, 
+                    method='jax_expm_parallel', 
+                    t_eval=jnp.linspace(chunk[0], chunk[-1], len(chunk)), 
+                    max_dt=max_dt 
+                )
+
+                if chunk_results == []:
+                    chunk_results.extend(result.y)
+                else:
+                    chunk_results.extend(result.y[1:])
+
+                current_state = result.y[-1]
+            ode_result = qutip.solver.Result()
+            ode_result.times=tlist
+            ode_result.states=chunk_results
+            return ode_result
+        else:
+            ###################################
+            # Here the tlist of the result is a new one
+            ###################################
+            current_state = initial_state
+            chunk_results = []
+            t_results = []
+            total_time = tlist[-1] - tlist[0]
+            num_intervals = int(len(tlist) / chunk_size)
+            interval_length = total_time / num_intervals
+
+            for i in tqdm(range(num_intervals),desc=f"solving through chunks"):
+                t_start = tlist[0] + i * interval_length
+                t_end = t_start + interval_length
+                t_eval_interval = jnp.array([t_end])
+                print('solving with jax_expm_parallel')
+                result = ham_solver.solve(
+                    y0=current_state,
+                    t_span=[t_start, t_end],
+                    signals=signals,
+                    method='jax_expm_parallel',
+                    t_eval=t_eval_interval,
+                    max_dt=max_dt
+                )
+
+                chunk_results.append(result.y[-1])
+                t_results.append(t_eval_interval[-1])
+                current_state = result.y[-1] 
+            
+            ode_result = qutip.solver.Result()
+            ode_result.times=t_results
+            ode_result.states=chunk_results
+            return ode_result
+
+
+
+def square_cos(t, args):
+    w_d = args['w_d']
+    amp = args['amp']
+    t_stop = args.get('t_stop', None)
+    if t_stop != None:
+        if t <= t_stop:
+            cos = np.cos(w_d * 2 * np.pi * t)
+            return 2 * np.pi * amp * cos
+        else:
+            return 0
+    else:
+        cos = np.cos(w_d * 2 * np.pi * t)
+        return 2 * np.pi * amp * cos
+    
+def square_cos_with_rise_fall(t, args):
+    w_d = args['w_d']
+    amp = args['amp']
+    t_rise = args.get('t_rise', 0)  # Default rise time is 0 for no rise
+    t_stop = args.get('t_stop', None)
+    if t_rise == None:
+        t_rise = 0
+    # Function for the cosine modulation
+    def cos_modulation():
+        return 2 * np.pi * amp * np.cos(w_d * 2 * np.pi * t)
+
+    # Check if rise and fall times are specified
+    if t_rise > 0 and t_stop is None:
+        raise Exception('t_rise doesnt work when t_stop isnt provided')
+    elif t_rise > 0 and t_stop is not None:
+        t_fall_start = t_stop - t_rise  # Calculate when the fall should start
+        if 0 <= t <= t_rise:  # Rise segment
+            return np.sin(np.pi * t / (2 * t_rise))**2 * cos_modulation()
+        elif t_rise < t <= t_fall_start:  # Constant amplitude segment
+            return cos_modulation()
+        elif t_fall_start < t <= t_stop:  # Fall segment
+            return np.sin(np.pi * (t_stop - t) / (2 * t_rise))**2 * cos_modulation()
+        else:
+            return 0
+    else:  # No rise or fall, behave like the original function
+        return cos_modulation() if t_stop is None or t <= t_stop else 0
+
+def get_qiskit_square_pulse_with_sin_squared_edges(w_d_without_2pi,amp_without_2pi = 0.03, t_rise = 15,t_stop = 100):
+    t_square =  t_stop - 2 * t_rise
+    signal_sample_dt = 0.1 # Sample rate of the backend in ns.
+    base_drive_amplitude = amp_without_2pi * 2 * np.pi
+    _t = sym.symbols('t')
+    _amp = sym.symbols('amp')
+    _duration = sym.symbols('duration')
+    with qiskit.pulse.build(name="square") as square:
+        if t_rise > 0:
+            qiskit.pulse.play(
+                qiskit.pulse.library.ScalableSymbolicPulse(
+                    pulse_type="SinSquaredRingUp",
+                    duration= int(t_rise/signal_sample_dt), 
+                    amp=base_drive_amplitude, 
+                    angle=0,
+                    envelope= _amp * sym.sin(sym.pi * _t  / (2 * t_rise / signal_sample_dt) )**2,
+                ), 
+                qiskit.pulse.DriveChannel(0)
+            )
+        qiskit.pulse.play(
+            qiskit.pulse.Constant(
+                duration = int(t_square/signal_sample_dt), 
+                amp = base_drive_amplitude
+            ), 
+            qiskit.pulse.DriveChannel(0)
+        )
+        if t_rise > 0:
+            qiskit.pulse.play(
+                qiskit.pulse.library.ScalableSymbolicPulse(
+                    pulse_type="SinSquaredRingDown",
+                    duration=int(t_rise/signal_sample_dt), 
+                    amp=base_drive_amplitude,
+                    angle=0, 
+                    envelope=  _amp* sym.sin(sym.pi * (_duration - _t ) / (2 * t_rise / signal_sample_dt))**2,
+                ), 
+                qiskit.pulse.DriveChannel(0)
+            )
+    return square
+
+def mesolve_and_post_processing(
+            rho0,
+            H_with_drive,
+            tlist, 
+            additional_args,
+            c_ops = None,
+            e_ops = None,
+            post_processing_funcs=[],
+            post_processing_args=[],
+            ):
+    result = qutip.mesolve(
+        H=H_with_drive,
+        rho0=rho0,
+        tlist=tlist,
+        c_ops=c_ops,
+        e_ops = e_ops,
+        args=additional_args,
+        options=qutip.Options(store_states=True, nsteps=80000, num_cpus=1),
+        progress_bar = qutip.ui.progressbar.EnhancedTextProgressBar(),
+    )
+    for func, args in zip(post_processing_funcs, post_processing_args):
+        result.states = [func(state, *args) for state in tqdm(result.states, desc=f"Processing states with {func.__name__}")]
+
+
+    return result
+
+
+
 def run_fluxonium_osc_system_mesolve_jobs(
         list_of_systems: List[fluxonium_oscillator_system],
         list_of_kwargs: list[Any],
@@ -256,161 +502,6 @@ def run_fluxonium_osc_system_mesolve_jobs(
     return results
 
 
-
-def square_cos(t, args):
-    w_d = args['w_d']
-    amp = args['amp']
-    t_stop = args.get('t_stop', None)
-    if t_stop != None:
-        if t <= t_stop:
-            cos = np.cos(w_d * 2 * np.pi * t)
-            return 2 * np.pi * amp * cos
-        else:
-            return 0
-    else:
-        cos = np.cos(w_d * 2 * np.pi * t)
-        return 2 * np.pi * amp * cos
-    
-def square_cos_with_rise_fall(t, args):
-    w_d = args['w_d']
-    amp = args['amp']
-    t_rise = args.get('t_rise', 0)  # Default rise time is 0 for no rise
-    t_stop = args.get('t_stop', None)
-    if t_rise == None:
-        t_rise = 0
-    # Function for the cosine modulation
-    def cos_modulation():
-        return 2 * np.pi * amp * np.cos(w_d * 2 * np.pi * t)
-
-    # Check if rise and fall times are specified
-    if t_rise > 0 and t_stop is None:
-        raise Exception('t_rise doesnt work when t_stop isnt provided')
-    elif t_rise > 0 and t_stop is not None:
-        t_fall_start = t_stop - t_rise  # Calculate when the fall should start
-        if 0 <= t <= t_rise:  # Rise segment
-            return np.sin(np.pi * t / (2 * t_rise))**2 * cos_modulation()
-        elif t_rise < t <= t_fall_start:  # Constant amplitude segment
-            return cos_modulation()
-        elif t_fall_start < t <= t_stop:  # Fall segment
-            return np.sin(np.pi * (t_stop - t) / (2 * t_rise))**2 * cos_modulation()
-        else:
-            return 0
-    else:  # No rise or fall, behave like the original function
-        return cos_modulation() if t_stop is None or t <= t_stop else 0
-
-def mesolve_and_post_processing(
-            rho0,
-            H_with_drive,
-            tlist, 
-            additional_args,
-            c_ops = None,
-            e_ops = None,
-            post_processing_funcs=[],
-            post_processing_args=[],
-            ):
-    result = qutip.mesolve(
-        H=H_with_drive,
-        rho0=rho0,
-        tlist=tlist,
-        c_ops=c_ops,
-        e_ops = e_ops,
-        args=additional_args,
-        options=qutip.Options(store_states=True, nsteps=80000, num_cpus=1),
-        progress_bar = qutip.ui.progressbar.EnhancedTextProgressBar(),
-    )
-    for func, args in zip(post_processing_funcs, post_processing_args):
-        result.states = [func(state, *args) for state in tqdm(result.states, desc=f"Processing states with {func.__name__}")]
-
-
-    return result
-
-def solve_with_jax_gpu(ham_solver, y0, tlist, signals, max_dt=1, chunk_size=10):
-    # Split the time list `tlist` into chunks to process in segments for efficiency
-    tlist_chunks = []
-    for i in range(0, len(tlist) - 1, chunk_size - 1):
-        chunk = tlist[i:i + chunk_size]
-        tlist_chunks.append(chunk)
-
-    # Initialize the current state of the system with the initial state `y0`
-    current_state = y0
-    chunk_results = []
-
-    # Iterate over each chunk of time list
-    for i, chunk in enumerate(tlist_chunks):
-        # Solve the Hamiltonian for the current chunk of time
-        result = ham_solver.solve(
-            y0=current_state,  # Initial state for the chunk
-            t_span=[chunk[0], chunk[-1]],  # Start and end time of the chunk
-            signals=signals,  # External signals applied to the system
-            method='jax_expm_parallel',  # Method to solve, utilizing parallel expm via JAX
-            t_eval=jnp.linspace(chunk[0], chunk[-1], len(chunk)),  # Time points to evaluate
-            max_dt=max_dt  # Maximum time step for the solver
-        )
-
-        # Append the solution for the current chunk to the results, avoiding duplicate states between chunks
-        if i == 0:
-            chunk_results.extend(result.y)
-        else:
-            chunk_results.extend(result.y[1:])
-
-        # Update the current state to the last state of the current chunk for continuity in the next chunk
-        current_state = result.y[-1]
-        clear_output(wait=True)  # Clear the output to keep the progress display clean
-        print(f"Progress: Chunk {i + 1}/{len(tlist_chunks)} solved.")  # Print progress
-
-    # Combine all chunk results into a custom ODE result object for the entire time list
-    ode_result = CustomOdeResult(times=tlist, states=chunk_results)
-    return ode_result
-
-def solve_with_jax_gpu_lindbladian(ham_solver, y0, tlist, signals, max_dt=1, chunk_size=10):
-    # Set the solver to use a dense vectorized mode for Lindbladian dynamics
-    ham_solver.model.evaluation_mode = "dense_vectorized"
-    
-    # Ensure the initial state `y0` is a density matrix flattened into a vector if not already
-    if y0.shape[0] != ham_solver.model.dim**2:
-        y0 = y0 @ y0.conj().T  # Convert the state to a density matrix if not already
-        y0 = y0.flatten(order='F')  # Flatten the matrix to a vector
-
-    # Initialize an empty custom ODE result object
-    ode_result = CustomOdeResult()
-    # Solve the system in chunks if chunk size is valid
-    if chunk_size >= 1:
-        ode_result = solve_with_jax_gpu(ham_solver, y0, tlist, signals, max_dt, chunk_size)
-    else:
-        # For invalid chunk sizes, solve the system over the entire time list without chunking
-        current_state = y0
-        chunk_results = []
-        t_results = []
-        total_time = tlist[-1] - tlist[0]
-        num_intervals = int(len(tlist) / chunk_size)
-        interval_length = total_time / num_intervals
-
-        # Iterate over each interval and solve
-        for i in range(num_intervals):
-            t_start = tlist[0] + i * interval_length
-            t_end = t_start + interval_length
-            t_eval_interval = jnp.array([t_end])
-
-            result = ham_solver.solve(
-                y0=current_state,
-                t_span=[t_start, t_end],
-                signals=signals,
-                method='jax_expm_parallel',
-                t_eval=t_eval_interval,
-                max_dt=max_dt
-            )
-
-            chunk_results.append(result.y[-1])
-            t_results.append(t_eval_interval[-1])
-
-            current_state = result.y[-1]
-            clear_output(wait=True)
-            print(f"Progress: Interval {i + 1}/{num_intervals} solved.")
-        
-        # Compile results into a custom ODE result object
-        ode_result = CustomOdeResult(t_results, chunk_results)
-    
-    return ode
 
 
 ############################################################################
@@ -617,6 +708,17 @@ def compute_and_store_2_level_dm(args):
     with open(file_name, 'wb') as f:
         pickle.dump(rho_2_level, f)
 
+
+def qobj_to_Array(matrix):
+    
+    from qiskit_dynamics.array import Array
+    Array.set_default_backend('jax')
+
+    if type(matrix) == qutip.qobj.Qobj:
+        return Array(matrix.full()) 
+    else:
+        return Array(matrix) # Should be able to directly convert to Array
+    
 
 
 ############################################################################
