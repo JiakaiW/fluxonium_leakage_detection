@@ -17,7 +17,7 @@ import concurrent
 from dataclasses import dataclass
 import importlib.util
 import ipywidgets as widgets
-
+from itertools import product
 import math
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
@@ -29,7 +29,6 @@ import scqubits
 import sympy as sym
 from typing import List, Any, Union, Tuple, Callable, Dict
 from tqdm.notebook import tqdm
-from tqdm import tqdm
 import uuid
 
 
@@ -56,7 +55,7 @@ class CoupledSystem:
     A parent class for quantum systems involving qubits and oscillators,
     
     This class is meant to be very generic, any specific setup can inherit from this 
-        class and define commonly used attributes in the child class
+        class and define commonly used attributes in the child class and be as customized as wanted
     '''
     def __init__(self,
                  hilbertspace,
@@ -68,6 +67,8 @@ class CoupledSystem:
         self.hilbertspace = hilbertspace
         self.hilbertspace.generate_lookup()
         self.product_to_dressed = generate_single_mapping(self.hilbertspace.hamiltonian())
+        if products_to_keep == None or products_to_keep == []:
+            products_to_keep =list(product(*[range(dim) for dim in self.hilbertspace.subsystem_dims])) 
         self.products_to_keep = products_to_keep
 
         self.evals = self.hilbertspace["evals"][0]
@@ -128,7 +129,7 @@ class CoupledSystem:
 
 
 
-class FluxoniumOscillatorSystem:
+class FluxoniumOscillatorSystem(CoupledSystem):
     '''
     To model leakage detection of 12 fluxonium
     '''
@@ -136,17 +137,17 @@ class FluxoniumOscillatorSystem:
                 computaional_states:str, # = '0,1' or '1,2'
                 drive_transition: Tuple[int] = None,
 
-                EJ:float = 3,
-                EC:float = 0.6,
-                EL:float = 0.13,
-                qubit_level:float = 30,
+                EJ:float = 2.33,
+                EC:float = 0.69,
+                EL:float = 0.12,
+                qubit_level:float = 13,
                 
                 
-                Er:float = 7.2622522,
+                Er:float = 7.16518677,
                 osc_level:float = 30,
                 kappa = 0.001,
 
-                g_strength:float = 0.3,
+                g_strength:float = 0.18,
 
                 products_to_keep: List[List[int]]= None,
                 w_d:float = None
@@ -160,9 +161,9 @@ class FluxoniumOscillatorSystem:
         hilbertspace = scqubits.HilbertSpace([self.qbt, self.osc])
         hilbertspace.add_interaction(g_strength=g_strength,op1=self.qbt.n_operator,op2=self.osc.creation_operator,add_hc=True)
 
-        if products_to_keep is None:
-            products_to_keep = [[ql, ol] for ql in [1,2,3] for ol in range(10) ] \
-                                + [[ql, ol] for ql in [0] for ol in range(30) ]
+        # if products_to_keep is None:
+        #     products_to_keep = [[ql, ol] for ql in [1,2,3] for ol in range(10) ] \
+        #                         + [[ql, ol] for ql in [0] for ol in range(30) ]
 
         super().__init__(hilbertspace = hilbertspace,
                          products_to_keep = products_to_keep,
@@ -188,41 +189,47 @@ class FluxoniumOscillatorSystem:
         
         
 
-class FluxoniumOscillatorFilterSystem:
+class FluxoniumOscillatorFilterSystem(CoupledSystem):
     '''
     To model leakage detection of 12 fluxonium with purcell filter
     '''
     def __init__(self,
                 computaional_states:str, # = '0,1' or '1,2'
-                drive_transition: Tuple[int] = None,
 
-                EJ:float = 3,
-                EC:float = 0.6,
-                EL:float = 0.13,
-                qubit_level:float = 30,
+                EJ:float = 2.33,
+                EC:float = 0.69,
+                EL:float = 0.12,
+                qubit_level:float = 13,
                 
                 
-                Er:float = 7.2622522,
-                osc_level:float = 30,
-                kappa = 0.001,
+                Er:float = 7.16518677,
+                osc_level:float = 20,
+                
+                Ef:float = 7.13,
+                filter_level:float = 7,
+                kappa_f = 1.5, # Ef *2pi = omega_f,  kappa_f = omega_f / Q , kappa_f^{-1} = 0.67 ns
 
-                g_strength:float = 0.3,
+                g_strength:float = 0.18,
+                G_strength:float = 0.3, # G satisfies a relation with omega_r in equation 10 of Phys. Rev A 92. 012325 (2015)
 
                 products_to_keep: List[List[int]]= None,
-                w_d:float = None
+                w_d:float = None,
                 ):
-        '''
-        Initialize objects before truncation
-        '''
-        
+
+
+        # Q_f = 30
+        # kappa_f = Ef * 2 * np.pi / Q_f
+        # kappa_r = 0.0001 #we want a really small effective readout resonator decay rate to reduce purcell decay
+        # G_strength =np.sqrt(kappa_f * kappa_r * ( 1 + (2*(Er-Ef)*2*np.pi/kappa_f )**2 ) /4)
+
+        self.G_strength = G_strength
+
         self.qbt = scqubits.Fluxonium(EJ=EJ,EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
         self.osc = scqubits.Oscillator(E_osc=Er,truncated_dim=osc_level)
-        hilbertspace = scqubits.HilbertSpace([self.qbt, self.osc])
+        self.filter = scqubits.Oscillator(E_osc=Ef,truncated_dim=filter_level)
+        hilbertspace = scqubits.HilbertSpace([self.qbt, self.osc,self.filter])
         hilbertspace.add_interaction(g_strength=g_strength,op1=self.qbt.n_operator,op2=self.osc.creation_operator,add_hc=True)
-
-        if products_to_keep is None:
-            products_to_keep = [[ql, ol] for ql in [1,2,3] for ol in range(10) ] \
-                                + [[ql, ol] for ql in [0] for ol in range(30) ]
+        hilbertspace.add_interaction(g_strength=G_strength,op1=self.osc.creation_operator,op2=self.filter.annihilation_operator,add_hc=True)
 
         super().__init__(hilbertspace = hilbertspace,
                          products_to_keep = products_to_keep,
@@ -231,20 +238,15 @@ class FluxoniumOscillatorFilterSystem:
 
         self.a = qutip.Qobj(self.hilbertspace.op_in_dressed_eigenbasis(self.osc.annihilation_operator)[:, :])
         self.a_trunc = self.truncate_function(self.a)
-        self.driven_operator =   self.a_trunc+self.a_trunc.dag()
-        self.c_ops = [np.sqrt(kappa) * self.a_trunc]
+
+        self.b = qutip.Qobj(self.hilbertspace.op_in_dressed_eigenbasis(self.filter.annihilation_operator)[:, :])
+        self.b_trunc = self.truncate_function(self.b)
+        self.driven_operator =   self.b_trunc+self.b_trunc.dag()
+        self.c_ops = [np.sqrt(kappa_f) * self.b_trunc]
         
         if w_d!= None:
             self.w_d = w_d
-        elif drive_transition!= None:
-            self.w_d = transition_frequency(self.hilbertspace,self.product_to_dressed[drive_transition[0]],self.product_to_dressed[drive_transition[1]] ) 
-        elif computaional_states == '1,2':
-            self.w_d = transition_frequency(self.hilbertspace,self.product_to_dressed[(0,0)],self.product_to_dressed[(0,1)] ) 
-        elif computaional_states == '0,1':
-            self.w_d = transition_frequency(self.hilbertspace,self.product_to_dressed[(2,0)],self.product_to_dressed[(2,1)] ) 
-        else:
-            raise Exception('computaional_states not supported')
-        
+
      
 
 
@@ -388,6 +390,7 @@ def run_jax_solve(w_d,
                 t_stop=None,
                 t_rise=None,
                 driven_operator = None, # like a_trunc+a_trunc.dag()
+                chunk_size=2 
                 ):
     ########################################################################################
     #
@@ -422,7 +425,6 @@ def run_jax_solve(w_d,
             initial_state = initial_state.flatten(order='F')  
 
     signals = get_qiskit_square_pulse_with_sin_squared_edges(
-                                            w_d_without_2pi = w_d,
                                             amp_without_2pi = amp,
                                             t_rise = t_rise if t_rise is not None else 0,
                                             t_stop = t_stop if t_stop is not None else tlist[-1]
@@ -439,7 +441,7 @@ def run_jax_solve(w_d,
         states = result.y
 
     elif mode == 'gpu':
-        chunk_size=1
+        
         if chunk_size >= 1:
             ###################################
             # Here the tlist of the result is still the original tlist
@@ -449,6 +451,7 @@ def run_jax_solve(w_d,
             chunk_results = []
 
             for chunk in tqdm(tlist_chunks,desc=f"solving through chunks"):
+                print()
                 result = ham_solver.solve(
                     y0=current_state, 
                     t_span=[chunk[0], chunk[-1]],
@@ -481,7 +484,6 @@ def run_jax_solve(w_d,
                 t_start = tlist[0] + i * interval_length
                 t_end = t_start + interval_length
                 t_eval_interval = jnp.array([t_end])
-                print('solving with jax_expm_parallel')
                 result = ham_solver.solve(
                     y0=current_state,
                     t_span=[t_start, t_end],
@@ -500,7 +502,7 @@ def run_jax_solve(w_d,
         
     ode_result = qutip.solver.Result()
     ode_result.times= tlist
-    ode_result.states= [qutip.Qobj(state) for state in states]
+    ode_result.states= [qutip.Qobj(np.array(state)) for state in states]
     return ode_result
 
 
@@ -533,11 +535,11 @@ def square_pulse_with_rise_fall(t, args):
 
     if t < t_start:  # Before pulse start
         return 0
-    elif t_start <= t <= t_start + t_rise:  # Rise segment
+    elif   t_rise > 0  and t_start <= t <= t_start + t_rise:  # Rise segment
         return np.sin(np.pi * (t - t_start) / (2 * t_rise))**2 * cos_modulation()
     elif t_start + t_rise < t <= t_fall_start:  # Constant amplitude segment
         return cos_modulation()
-    elif t_fall_start < t <= t_end:  # Fall segment
+    elif  t_rise > 0  and  t_fall_start < t <= t_end:  # Fall segment
         return np.sin(np.pi * (t_end - t) / (2 * t_rise))**2 * cos_modulation()
     else:  # After pulse end
         return 0
@@ -641,59 +643,6 @@ def pad_back_custom(qobj: qutip.Qobj, products_to_keep: Union[list,None], produc
         padded_matrix[np.ix_(indices_to_keep, indices_to_keep)] = qobj.full()
         return qutip.Qobj(padded_matrix)
 
-def test_truncate_and_pad_custom():
-    # Define the mapping between product basis states and dressed states
-    product_to_dressed = {(0, 0): 0, 
-                            (1, 0): 1, 
-                            (0, 1): 2, 
-                            (1, 1): 3, 
-                            (2, 0): 4, 
-                            (0, 2): 5, 
-                            (1, 2): 6, 
-                            (2, 1): 7, 
-                            (2, 2): 8}
-
-    # Specify which products to keep
-    products_to_keep = [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2]]
-
-    # Create an example qubit operator
-    qubit_operator = qutip.tensor(qutip.Qobj(np.array([
-        [0, 1, 2],
-        [3, 4, 5],
-        [6, 7, 8]
-    ])), qutip.identity(3))
-
-    # Truncate using custom function
-    truncated_qubit_operator = truncate_custom(qubit_operator, products_to_keep, product_to_dressed)
-
-    # Pad back using custom function
-    padded_back_qubit_operator = pad_back_custom(truncated_qubit_operator, products_to_keep, product_to_dressed)
-
-    # Expected truncated matrix based on products_to_keep
-    truncated_expected = np.array([
-        [0, 0, 0, 1, 0 ,2],
-        [0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 1, 0],
-        [3, 0, 0, 4, 0, 5],
-        [0, 0, 3, 0, 4, 0],
-        [6, 0, 0, 7, 0, 8]
-    ], dtype=complex)
-
-    assert np.allclose(truncated_qubit_operator.full(), truncated_expected), f"Truncated does not match: \n{truncated_qubit_operator.full()}"
-
-    padded_expected = np.array([
-        [0, 0, 0, 1, 0, 0 ,2, 0,0],
-        [0, 0, 0, 0, 0, 0, 0, 0,0],
-        [0, 0, 0, 0, 0, 1, 0, 0,0],
-        [3, 0, 0, 4, 0, 0, 5, 0,0],
-        [0, 0, 0, 0, 0, 0, 0, 0,0],
-        [0, 0, 3, 0, 0, 4, 0, 0,0],
-        [6, 0, 0, 7, 0, 0, 8, 0,0],
-        [0, 0, 0, 0, 0, 0, 0, 0,0],
-        [0, 0, 0, 0, 0, 0, 0, 0,0],
-    ], dtype=complex)
-
-    assert np.allclose(padded_back_qubit_operator.full(), padded_expected), f"Padded does not match:\n{padded_expected == padded_back_qubit_operator.full()}"
 
 def generate_single_mapping(H_with_interaction_no_drive) -> np.ndarray:
     """
@@ -882,11 +831,11 @@ def plot_population(results,qubit_level,osc_level,product_to_dressed,a,w_d,tlist
                 dressed_state = jnp.zeros(tot_dims).at[idx].set(1).reshape(-1, 1)
                 dressed_state_op = jnp.outer(dressed_state, jnp.conj(dressed_state).T)
                 expectations = vectorized_compute_expectation(states, dressed_state_op)
-                results[i].expect.append(expectations)
+                results[i].expect.append(np.array(expectations))
         alpha_expect = vectorized_compute_expectation(states, a_op)
         pns_expect = vectorized_compute_expectation(states, pn_op)
-        results[i].expect.append(alpha_expect)
-        results[i].expect.append(pns_expect)
+        results[i].expect.append(np.array(alpha_expect))
+        results[i].expect.append(np.array(pns_expect))
 
     if fourier == True:
         first_dominant_freq =find_dominant_frequency(results[0].expect[-2],tlist)
@@ -901,14 +850,12 @@ def plot_population(results,qubit_level,osc_level,product_to_dressed,a,w_d,tlist
             qubit_state_population = [np.zeros(shape=len(tlist))]*qubit_level
             for idx, product_state in enumerate(product_states):
                 ql = product_state[0]
-                qubit_state_population[ql] += results[i].expect[idx]
+                qubit_state_population[ql] += np.array(results[i].expect[idx],dtype=np.float64)
             for ql in range(nlevels):
                 axes[0][i].plot(tlist, qubit_state_population[ql], label=r"$\overline{|%s\rangle}$" % (f"{ql}"))
         
 
-        #*np.exp(-1j * 2 * np.pi * first_dominant_freq * tlist) # *np.exp(-1j * 2 * np.pi * dominant_freq * tlist)  
-
-        alpha = results[i].expect[-2]*np.exp(-1j * 2 * np.pi * first_dominant_freq * tlist)
+        alpha = results[i].expect[-2]*np.exp(-1j * 2 * np.pi * np.array(first_dominant_freq) * np.array(tlist))
 
         # Coherent state eigenval
         real = alpha.real
