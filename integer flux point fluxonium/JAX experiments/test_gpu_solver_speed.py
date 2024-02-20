@@ -11,7 +11,6 @@ from utils import *
 
 
 if __name__ == '__main__':
-    # For Windows and MacOS compatibility:
     from multiprocessing import freeze_support
     freeze_support()
 
