@@ -239,6 +239,7 @@ def ODEsolve_and_post_process(
             c_ops: Union[None,List[qutip.Qobj]] = None,
             e_ops:Union[None,List[qutip.Qobj]] = None,
 
+            store_states = True,
             method:str = 'mesolve',
             post_processing_funcs:List=[],
             post_processing_args:List=[],
@@ -273,7 +274,7 @@ def ODEsolve_and_post_process(
             c_ops=c_ops,
             e_ops = e_ops,
             args=additional_args,
-            options=qutip.Options(store_states=True, nsteps=80000, num_cpus=1),
+            options=qutip.Options(store_states=store_states, nsteps=80000, num_cpus=1),
             progress_bar = qutip.ui.progressbar.EnhancedTextProgressBar(),
         )
 
@@ -301,6 +302,7 @@ def run_parallel_ODEsolve_and_post_process_jobs_with_different_systems(
         list_of_systems: List[CoupledSystem],
         list_of_kwargs: list[Any],
         max_workers = None,
+        store_states = True,
         post_processing = ['pad_back'],
     ):
     '''
@@ -347,7 +349,7 @@ def run_parallel_ODEsolve_and_post_process_jobs_with_different_systems(
                 drive_terms=list_of_kwargs[i].get('drive_terms', None),
                 c_ops=list_of_kwargs[i].get('c_ops', None),
                 e_ops=list_of_kwargs[i].get('e_ops', None),
-
+                store_states = store_states,
                 post_processing_funcs=post_processing_funcs,
                 post_processing_args=post_processing_args)
             futures[future] = i
