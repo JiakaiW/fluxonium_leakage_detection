@@ -290,10 +290,16 @@ def ODEsolve_and_post_process(
                             progress_bar = qutip.ui.progressbar.EnhancedTextProgressBar(),
                             )
 
+    # for func, args in zip(post_processing_funcs, post_processing_args):
+    #     result.states = [func(state, *args) for state in tqdm(result.states, desc=f"Processing states with {func.__name__}")]
+
+    # Editted post processing so that it doesn't overwrite result.states
+    last_attribute_name = "states"
     for func, args in zip(post_processing_funcs, post_processing_args):
-        result.states = [func(state, *args) for state in tqdm(result.states, desc=f"Processing states with {func.__name__}")]
-
-
+        new_attr_name = f"states_{func.__name__}" 
+        processed_states = [func(state, *args) for state in tqdm( getattr(result, last_attribute_name), desc=f"Processing states with {func.__name__}")]
+        setattr(result, new_attr_name, processed_states)
+        last_attribute_name = new_attr_name
     return result
 
 
