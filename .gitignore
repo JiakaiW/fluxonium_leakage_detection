@@ -31,3 +31,5 @@ integer flux point fluxonium/pickles/mcsolve_2.65_g0.13_a0.003_10level_qbt_state
 *mcsolve_three_outcome_state5_233.pkl
 *mcsolve_three_outcome_state6_233.pkl
 *mcsolve_three_outcome_state7_233.pkl
+integer flux point fluxonium/pickles/mcsolve_three_outcome_state4_233_summed_two_level_non_partial_trace.pkl
+integer flux point fluxonium/pickles/mcsolve_three_outcome_state5_233_summed_two_level_non_partial_trace.pkl
