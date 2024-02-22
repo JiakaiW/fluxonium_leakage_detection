@@ -99,12 +99,12 @@ if __name__ == '__main__':
         
 
     results = run_parallel_ODEsolve_and_post_process_jobs_with_different_systems(
-        list_of_systems,
-        list_of_kwargs,
+        list_of_systems[:12],
+        list_of_kwargs[:12],
         post_processing = ['pad_back','partial_trace_computational_states']
     )
 
 
     import pickle
-    with open('../pickles/mesolve_final.pkl', 'wb') as file:
+    with open('../pickles/mesolve_final_first16.pkl', 'wb') as file:
         pickle.dump(results, file)
