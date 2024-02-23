@@ -28,15 +28,11 @@ if __name__ == '__main__':
     state_0_dressed = qutip.basis(system_computational.hilbertspace.dimension, system_computational.product_to_dressed[(1,0)])
     state_1_dressed = qutip.basis(system_computational.hilbertspace.dimension, system_computational.product_to_dressed[(2,0)])
     state_plus_dressed = (state_0_dressed  +  state_1_dressed).unit()
-    state_minus_dressed = (state_0_dressed - state_1_dressed).unit()
-    state_plus_i_dressed = (state_0_dressed + 1j * state_1_dressed).unit()
     state_minus_i_dressed = (state_0_dressed - 1j * state_1_dressed).unit()
     initial_states  = [
         state_0_dressed,
         state_1_dressed,
         state_plus_dressed,
-        state_minus_dressed,
-        state_plus_i_dressed,
         state_minus_i_dressed,
         state_0_dressed * state_1_dressed.dag(),
         state_1_dressed * state_0_dressed.dag(),
@@ -48,8 +44,8 @@ if __name__ == '__main__':
     list_of_systems = []
     list_of_kwargs = []
     system = system_computational
-    for kappa in [1e-3,5e-4]:
-        for system, y0 in initial_states:
+    for kappa in [1e-3]:
+        for y0 in initial_states:
             list_of_systems.append(system)
             list_of_kwargs.append( {
                 'y0':system.truncate_function(y0) ,
@@ -75,5 +71,5 @@ if __name__ == '__main__':
 
 
     import pickle
-    with open('../pickles/mesolve_wd1649_final_computational.pkl', 'wb') as file:
+    with open('../pickles/mesolve_wd1649_final_computational_1em3.pkl', 'wb') as file:
         pickle.dump(results, file)
