@@ -9,8 +9,8 @@ if __name__ == '__main__':
     from multiprocessing import freeze_support
     freeze_support()
 
-    max_ql = 14
-    max_ol = 40
+    max_ql = 20
+    max_ol = 50
     system = FluxoniumOscillatorSystem(
         computaional_states = '1,2',
         EJ = 2.33,
@@ -23,7 +23,7 @@ if __name__ == '__main__':
         products_to_keep=[[ql, ol] for ql in range(max_ql) for ol in range(max_ol) ],
     )
 
-    tot_time =810
+    tot_time =840
     tlist = np.linspace(0, tot_time, tot_time)
 
 
