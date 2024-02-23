@@ -196,7 +196,8 @@ def plot_heatmap(result, time_index, product_to_dressed, qubit_levels, oscillato
         dm = result.states[time_index]
     elif hasattr(result, 'y'):
         dm = result.y[time_index]
-
+    if hasattr(result, 'states_pad_back_custom'):
+        dm = result.states_pad_back_custom[time_index]
     if dm.shape[1] == 1:
         dm = qutip.ket2dm(dm)
     

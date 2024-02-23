@@ -20,7 +20,7 @@ if __name__ == '__main__':
         g_strength = 0.18,
         qubit_level = max_ql,
         osc_level = max_ol,
-        products_to_keep=[[ql, ol] for ql in range(4) for ol in range(max_ol) ],
+        products_to_keep=[[ql, ol] for ql in [0,3] for ol in range(max_ol) ],
     )
 
     tot_time =900
@@ -29,7 +29,6 @@ if __name__ == '__main__':
 
     initial_states  = [
         qutip.basis(system.hilbertspace.dimension, system.product_to_dressed[(0,0)]),
-        qutip.basis(system.hilbertspace.dimension, system.product_to_dressed[(1,0)]),
         qutip.basis(system.hilbertspace.dimension, system.product_to_dressed[(3,0)]),
         ]
 
@@ -40,7 +39,7 @@ if __name__ == '__main__':
                         driven_op=system.a_trunc + system.a_trunc.dag(),
                         pulse_shape_func=square_pulse_with_rise_fall,
                         pulse_shape_args={
-                            'w_d': 7.165,
+                            'w_d': 7.1649,
                             'amp': 0.0013,
                             't_square': 900,
                         })],
@@ -53,5 +52,5 @@ if __name__ == '__main__':
 
 
     import pickle
-    with open('../pickles/mesolve_temp_1650_see_domi_frequency.pkl', 'wb') as file:
+    with open('../pickles/mesolve_temp_1649_see_domi_frequency.pkl', 'wb') as file:
         pickle.dump(results, file)
