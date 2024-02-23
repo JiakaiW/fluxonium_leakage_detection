@@ -83,6 +83,15 @@ class CoupledSystem:
             post_processing_funcs.append(pad_back_custom)
             post_processing_args.append((self.products_to_keep, 
                                 self.product_to_dressed))
+        if 'partial_trace_computational_states' in post_processing:
+            post_processing_funcs.append(dressed_to_2_level_dm)
+            post_processing_args.append((
+                                        self.product_to_dressed,
+                                        self.qbt_position, 
+                                        self.computaional_states[0],
+                                        self.computaional_states[1],
+                                        None))
+            
 
         results = [None] * len(initial_states)
         with concurrent.futures.ProcessPoolExecutor(max_workers=None) as executor:

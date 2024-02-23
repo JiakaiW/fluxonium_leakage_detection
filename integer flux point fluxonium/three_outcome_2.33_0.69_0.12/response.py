@@ -41,7 +41,7 @@ if __name__ == '__main__':
                 pulse_shape_func=square_pulse_with_rise_fall,
                 pulse_shape_args={
                     'w_d': freq,
-                    'amp': 0.0015,
+                    'amp': 0.0001,
                     't_square': 10000
                 })],
                 'e_ops':[system.a_trunc.dag()*system.a_trunc]
