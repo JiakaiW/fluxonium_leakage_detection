@@ -48,3 +48,8 @@ integer flux point fluxonium/pickles/mesolve_wd1649_final_computational_5em4.pkl
 integer flux point fluxonium/pickles/mesolve_wd1649_final_leakage.pkl
 integer flux point fluxonium/pickles/mesolve_wd1649_unitary_large_dim.pkl
 integer flux point fluxonium/pickles/mesolve_wd1649_unitary_large_dim.pkl
+integer flux point fluxonium/pickles/mesolve_temp_1649_feb26_new_driven_op.pkl
+integer flux point fluxonium/pickles/mesolve_wd1649_final_computational_new_op.pkl
+integer flux point fluxonium/pickles/optimize_ol_phases_unitary_new_driven_op.pkl
+integer flux point fluxonium/pickles/optimize_ol_phases_new_op.pkl
+integer flux point fluxonium/pickles/mesolve_wd1649_final_computational_new_driven_op.pkl

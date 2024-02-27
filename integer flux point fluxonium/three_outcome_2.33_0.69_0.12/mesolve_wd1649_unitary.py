@@ -23,7 +23,7 @@ if __name__ == '__main__':
         products_to_keep=[[ql, ol] for ql in [1,2] for ol in range(30) ],
     )
 
-    tot_time =850
+    tot_time =1500
     tlist = np.linspace(0, tot_time, tot_time)
 
 
@@ -48,13 +48,13 @@ if __name__ == '__main__':
         initial_states = [system.truncate_function(state) for state in initial_states],
         tlist = tlist,
         drive_terms = [DriveTerm( 
-                        driven_op=system.a_trunc + system.a_trunc.dag(),
+                        driven_op= -1j*(system.a_trunc - system.a_trunc.dag()),
                         pulse_shape_func=square_pulse_with_rise_fall,
                         pulse_shape_args={
                             'w_d': 7.1649,
                             'amp': 0.0013,
                             't_rise': 40,
-                            't_square': 900,
+                            't_square': tot_time,
                         })],
         c_ops = None,
         e_ops=[
@@ -69,5 +69,5 @@ if __name__ == '__main__':
     #     pickle.dump(results, file)
 
     import pickle
-    with open('../pickles/mesolve_temp_1649_feb26.pkl', 'wb') as file:
+    with open('../pickles/mesolve_temp_1649_feb26_new_driven_op.pkl', 'wb') as file:
         pickle.dump(results, file)
