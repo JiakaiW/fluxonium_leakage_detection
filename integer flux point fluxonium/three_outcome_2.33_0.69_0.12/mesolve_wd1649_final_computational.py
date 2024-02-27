@@ -39,7 +39,7 @@ if __name__ == '__main__':
         state_1_dressed * state_0_dressed.dag(),
         ]
 
-    tot_time = 920
+    tot_time = 1500
     tlist = np.linspace(0, tot_time, tot_time)
 
     list_of_systems = []
@@ -52,7 +52,7 @@ if __name__ == '__main__':
                 'y0':system.truncate_function(y0) ,
                 'tlist':tlist,
                 'drive_terms':[DriveTerm( 
-                                        driven_op=system.a_trunc + system.a_trunc.dag(),
+                                        driven_op=-1j*(system.a_trunc - system.a_trunc.dag()),
                                         pulse_shape_func=square_pulse_with_rise_fall,
                                         pulse_shape_args={
                                             'w_d': 7.1649,
@@ -73,5 +73,5 @@ if __name__ == '__main__':
 
 
     import pickle
-    with open('../pickles/mesolve_wd1649_final_computational_new_op.pkl', 'wb') as file:
+    with open('../pickles/mesolve_wd1649_final_computational_new_driven_op.pkl', 'wb') as file:
         pickle.dump(results, file)
