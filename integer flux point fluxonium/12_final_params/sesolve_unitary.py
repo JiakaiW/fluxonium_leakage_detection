@@ -13,17 +13,17 @@ if __name__ == '__main__':
     max_ol = 50
     system = FluxoniumOscillatorSystem(
         computaional_states = '1,2',
-        EJ = 2.33,
-        EC = 0.69,
-        EL = 0.12,
-        Er = 7.16518677,
-        g_strength = 0.18,
+        EJ = 2.65,
+        EC = 0.6,
+        EL = 0.13,
+        Er = 7.17391479,
+        g_strength = 0.12,
         qubit_level = max_ql,
         osc_level = max_ol,
         products_to_keep=[[ql, ol] for ql in [1,2] for ol in range(30) ],
     )
 
-    tot_time =1000
+    tot_time =1500
     tlist = np.linspace(0, tot_time, tot_time)
 
 
@@ -52,7 +52,7 @@ if __name__ == '__main__':
                         driven_op= system.truncate_function(system.hilbertspace.op_in_dressed_eigenbasis(system.osc.n_operator)),
                         pulse_shape_func=square_pulse_with_rise_fall,
                         pulse_shape_args={
-                            'w_d': 7.1650,
+                            'w_d': 7.1734,
                             'amp': 0.003,
                             't_rise': 40,
                             't_square': tot_time,
@@ -70,5 +70,5 @@ if __name__ == '__main__':
     #     pickle.dump(results, file)
 
     import pickle
-    with open('../pickles/mesolve_temp_1649_feb26_new_driven_op_big_amp.pkl', 'wb') as file:
+    with open('../pickles/12_sesolve.pkl', 'wb') as file:
         pickle.dump(results, file)
