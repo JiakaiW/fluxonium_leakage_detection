@@ -9,8 +9,8 @@ if __name__ == '__main__':
     from multiprocessing import freeze_support
     freeze_support()
 
-    max_ql = 20
-    max_ol = 50
+    max_ql = 13
+    max_ol = 30
     system_computational = FluxoniumOscillatorSystem(
         EJ = 2.33,
         EC = 0.69,
@@ -19,8 +19,9 @@ if __name__ == '__main__':
         g_strength = 0.18,
         qubit_level = max_ql,
         osc_level = max_ol,
-        products_to_keep=[[ql, ol] for ql in [1,2] for ol in range(20) ]+ \
-                        [[ql, ol] for ql in [9,10,11] for ol in range(12) ] ,
+        # products_to_keep=[[ql, ol] for ql in [1,2] for ol in range(20) ]+ \
+        #                 [[ql, ol] for ql in [9,10,11] for ol in range(12) ] ,
+        products_to_keep=[[ql, ol] for ql in [1,2] for ol in range(20) ] ,
         computaional_states = '1,2',
         )
 
@@ -38,7 +39,7 @@ if __name__ == '__main__':
         state_1_dressed * state_0_dressed.dag(),
         ]
 
-    tot_time = 840
+    tot_time = 920
     tlist = np.linspace(0, tot_time, tot_time)
 
     list_of_systems = []
@@ -56,6 +57,7 @@ if __name__ == '__main__':
                                         pulse_shape_args={
                                             'w_d': 7.1649,
                                             'amp': 0.0013,
+                                            't_rise': 40,
                                             't_square': tot_time+10
                                         })],
                 'e_ops':[system.a_trunc , system.a_trunc.dag()*system.a_trunc],
@@ -71,5 +73,5 @@ if __name__ == '__main__':
 
 
     import pickle
-    with open('../pickles/mesolve_wd1649_final_computational_1em3.pkl', 'wb') as file:
+    with open('../pickles/mesolve_wd1649_final_computational_new_op.pkl', 'wb') as file:
         pickle.dump(results, file)

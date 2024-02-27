@@ -9,7 +9,7 @@ if __name__ == '__main__':
     from multiprocessing import freeze_support
     freeze_support()
 
-    max_ql = 20
+    max_ql = 13
     max_ol = 50
     system_leak0 = FluxoniumOscillatorSystem(
         EJ = 2.33,
@@ -43,12 +43,12 @@ if __name__ == '__main__':
         qutip.basis(system_leak3.hilbertspace.dimension, system_leak3.product_to_dressed[(3,0)]),
         ]
 
-    tot_time = 840
+    tot_time = 920
     tlist = np.linspace(0, tot_time, tot_time)
 
     list_of_systems = []
     list_of_kwargs = []
-    for kappa in [1e-3,5e-4]:
+    for kappa in [1e-3]:
         for system, y0 in zip([system_leak0,system_leak3],initial_states):
 
             list_of_systems.append(system)
@@ -61,6 +61,7 @@ if __name__ == '__main__':
                                         pulse_shape_args={
                                             'w_d': 7.1649,
                                             'amp': 0.0013,
+                                            't_rise': 40,
                                             't_square': tot_time+10
                                         })],
                 'e_ops':[system.a_trunc , system.a_trunc.dag()*system.a_trunc],
@@ -71,10 +72,10 @@ if __name__ == '__main__':
     results = run_parallel_ODEsolve_and_post_process_jobs_with_different_systems(
         list_of_systems,
         list_of_kwargs,
-        post_processing = ['pad_back','partial_trace_computational_states']
+        post_processing = ['pad_back']
     )
 
 
     import pickle
-    with open('../pickles/mesolve_wd1649_final_leakage.pkl', 'wb') as file:
+    with open('../pickles/mesolve_wd1649_final_leakage_new_op.pkl', 'wb') as file:
         pickle.dump(results, file)
