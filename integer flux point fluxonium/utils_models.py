@@ -146,9 +146,10 @@ class FluxoniumOscillatorSystem(CoupledSystem):
         '''
         
         self.qbt = scqubits.Fluxonium(EJ=EJ,EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
-        self.osc = scqubits.Oscillator(E_osc=Er,truncated_dim=osc_level)
+        self.osc = scqubits.Oscillator(E_osc=Er,truncated_dim=osc_level,l_osc=1.0)
         hilbertspace = scqubits.HilbertSpace([self.qbt, self.osc])
-        hilbertspace.add_interaction(g_strength=g_strength,op1=self.qbt.n_operator,op2=self.osc.creation_operator,add_hc=True)
+        
+        hilbertspace.add_interaction(g_strength=g_strength,op1=self.qbt.n_operator, op2=self.osc.n_operator,add_hc=False) # Edited
 
         # if products_to_keep is None:
         #     products_to_keep = [[ql, ol] for ql in [1,2,3] for ol in range(10) ] \
@@ -161,8 +162,8 @@ class FluxoniumOscillatorSystem(CoupledSystem):
 
         self.a = qutip.Qobj(self.hilbertspace.op_in_dressed_eigenbasis(self.osc.annihilation_operator)[:, :])
         self.a_trunc = self.truncate_function(self.a)
-        self.driven_operator =   self.a_trunc+self.a_trunc.dag()
-        self.c_ops = [np.sqrt(kappa) * self.a_trunc]
+        self.driven_operator =   -1j*(self.a_trunc - self.a_trunc.dag() ) # TODO:
+        self.c_ops = [np.sqrt(kappa) * self.a_trunc] 
 
         if w_d!= None:
             self.w_d = w_d

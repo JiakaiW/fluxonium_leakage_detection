@@ -20,17 +20,29 @@ if __name__ == '__main__':
         g_strength = 0.18,
         qubit_level = max_ql,
         osc_level = max_ol,
-        products_to_keep=[[ql, ol] for ql in [0,3] for ol in range(max_ol) ],
+        products_to_keep=[[ql, ol] for ql in [1,2] for ol in range(30) ],
     )
 
-    tot_time =900
+    tot_time =850
     tlist = np.linspace(0, tot_time, tot_time)
 
 
+    state_0_dressed = qutip.basis(system.hilbertspace.dimension, system.product_to_dressed[(1,0)])
+    state_1_dressed = qutip.basis(system.hilbertspace.dimension, system.product_to_dressed[(2,0)])
+    state_plus_dressed = (state_0_dressed  +  state_1_dressed).unit()
+    state_minus_i_dressed = (state_0_dressed - 1j * state_1_dressed).unit()
     initial_states  = [
-        qutip.basis(system.hilbertspace.dimension, system.product_to_dressed[(0,0)]),
-        qutip.basis(system.hilbertspace.dimension, system.product_to_dressed[(3,0)]),
+        state_0_dressed,
+        state_1_dressed,
+        state_plus_dressed,
+        state_minus_i_dressed
         ]
+    
+
+    # initial_states  = [
+    #     qutip.basis(system.hilbertspace.dimension, system.product_to_dressed[(0,0)]),
+    #     qutip.basis(system.hilbertspace.dimension, system.product_to_dressed[(3,0)]),
+    #     ]
 
     results = system.run_mesolve_parrallel(
         initial_states = [system.truncate_function(state) for state in initial_states],
@@ -41,16 +53,21 @@ if __name__ == '__main__':
                         pulse_shape_args={
                             'w_d': 7.1649,
                             'amp': 0.0013,
+                            't_rise': 40,
                             't_square': 900,
                         })],
         c_ops = None,
         e_ops=[
             system.a_trunc, system.a_trunc.dag()*system.a_trunc
         ],
-        post_processing = ['pad_back','partial_trace_eigen_states'],
+        post_processing = ['pad_back','partial_trace_computational_states'],
     )
 
 
+    # import pickle
+    # with open('../pickles/mesolve_temp_1649_see_domi_frequency.pkl', 'wb') as file:
+    #     pickle.dump(results, file)
+
     import pickle
-    with open('../pickles/mesolve_temp_1649_see_domi_frequency.pkl', 'wb') as file:
+    with open('../pickles/mesolve_temp_1649_feb26.pkl', 'wb') as file:
         pickle.dump(results, file)

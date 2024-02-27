@@ -126,27 +126,33 @@ def dressed_to_2_level_dm(dressed_dm: qutip.Qobj,
         dressed_dm_data = qutip.ket2dm(dressed_dm_data)
     dressed_dm_data = dressed_dm_data.full()
 
+    # Filter and adjust product_to_dressed
+    filtered_product_to_dressed = {}
+    for product_state, dressed_index in product_to_dressed.items():
+        if product_state[qbt_position] in (computational_0, computational_1):
+            new_product_state = list(product_state)
+            new_product_state[qbt_position] = 0 if product_state[qbt_position] == computational_0 else 1
+            filtered_product_to_dressed[tuple(new_product_state)] = dressed_index
+
     # Infer subsystem dimensions
     subsystem_dims = [max(indexes) + 1 for indexes in zip(*product_to_dressed.keys())]
-
-    rho_product = np.zeros((np.prod(subsystem_dims), np.prod(subsystem_dims)), dtype=complex)
-
-    for product_state, dressed_index1 in product_to_dressed.items():
-        index1 = sum([product_state[i] * int(np.prod(subsystem_dims[i+1:])) for i in range(len(subsystem_dims))])
-        for product_state2, dressed_index2 in product_to_dressed.items():
-            index2 = sum([product_state2[j] * int(np.prod(subsystem_dims[j+1:])) for j in range(len(subsystem_dims))])
-            # TODO  the order of product_state and product_state2 doesn't make sense to me, but it produces the right result. :(
+    subsystem_dims[qbt_position] = 2
+    rho_product = np.zeros((subsystem_dims*2), dtype=complex)
+    for product_state, dressed_index1 in filtered_product_to_dressed.items():
+        for product_state2, dressed_index2 in filtered_product_to_dressed.items():
             element = dressed_dm_data[dressed_index1, dressed_index2]
-            rho_product[index1, index2] += element
+            rho_product[product_state+product_state2] += element
 
+    two_lvl_qbt_dm_size = np.prod(subsystem_dims)
+    rho_product = rho_product.reshape((two_lvl_qbt_dm_size,two_lvl_qbt_dm_size))
     rho_product = qutip.Qobj(rho_product, dims=[subsystem_dims, subsystem_dims])
-    
-    qubit_rho = rho_product.ptrace(qbt_position)
 
-    rho_2_level = qutip.Qobj(np.array([
-            [qubit_rho[computational_0, computational_0],qubit_rho[computational_0, computational_1]],
-            [qubit_rho[computational_1, computational_0],qubit_rho[computational_1, computational_1]]
-        ]),dims=[[2],[2]])
+    rho_2_level = rho_product.ptrace(qbt_position)
+
+    # rho_2_level = qutip.Qobj(np.array([
+    #         [qubit_rho[computational_0, computational_0],qubit_rho[computational_0, computational_1]],
+    #         [qubit_rho[computational_1, computational_0],qubit_rho[computational_1, computational_1]]
+    #     ]),dims=[[2],[2]])
 
     return rho_2_level
 
@@ -179,7 +185,7 @@ def find_dominant_frequency(expectation,tlist,dominant_frequency_already_found =
         plt.grid(True)
         plt.show()
     elif plot_freq:
-        plt(expectation_fft)
+        plt.plot(expectation_fft)
         plt.show()
     else:
         return dominant_freq

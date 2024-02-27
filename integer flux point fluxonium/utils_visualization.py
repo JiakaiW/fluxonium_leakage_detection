@@ -200,7 +200,7 @@ def plot_heatmap(result, time_index, product_to_dressed, qubit_levels, oscillato
         dm = result.states_pad_back_custom[time_index]
     if dm.shape[1] == 1:
         dm = qutip.ket2dm(dm)
-    
+    dm = qutip.Qobj(dm.full())
     dm = 0.5 * (dm + dm.dag())
     dm = dm / dm.tr()
     
