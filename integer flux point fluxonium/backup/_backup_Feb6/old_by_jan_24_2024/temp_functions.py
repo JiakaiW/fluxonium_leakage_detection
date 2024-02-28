@@ -1,5 +1,5 @@
 
-from utils import *
+from backup.utils import *
             
 w_d = 7.264791587882943
 amp = 0.004

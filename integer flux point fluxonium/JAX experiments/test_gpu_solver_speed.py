@@ -7,7 +7,7 @@ jax.config.update('jax_platform_name', 'gpu')
 
 import sys
 sys.path.append('../')
-from utils import *
+from backup.utils import *
 
 
 if __name__ == '__main__':
