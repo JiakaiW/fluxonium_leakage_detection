@@ -13,17 +13,17 @@ if __name__ == '__main__':
     max_ol = 50
     system = FluxoniumOscillatorSystem(
         computaional_states = '1,2',
-        EJ = 2.65,
+        EJ = 2.62,
         EC = 0.6,
         EL = 0.13,
-        Er = 7.17391479,
-        g_strength = 0.12,
+        Er = 7.16331855,
+        g_strength = 0.1,
         qubit_level = max_ql,
         osc_level = max_ol,
         products_to_keep=[[ql, ol] for ql in [1,2] for ol in range(50) ],
     )
 
-    tot_time =1600
+    tot_time =1200
     tlist = np.linspace(0, tot_time, tot_time)
 
 
@@ -48,7 +48,7 @@ if __name__ == '__main__':
                         driven_op= system.truncate_function(system.hilbertspace.op_in_dressed_eigenbasis(system.osc.n_operator)),
                         pulse_shape_func=square_pulse_with_rise_fall,
                         pulse_shape_args={
-                            'w_d': 7.1722,
+                            'w_d': 7.1723,
                             'amp': 0.005,
                             't_rise': 30,
                             't_square': tot_time,

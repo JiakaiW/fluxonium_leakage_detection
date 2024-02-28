@@ -17,13 +17,13 @@ if __name__ == '__main__':
         EC = 0.6,
         EL = 0.13,
         Er = 7.17391479,
-        g_strength = 0.12,
+        g_strength = 0.13,
         qubit_level = max_ql,
         osc_level = max_ol,
         products_to_keep=[[ql, ol] for ql in [1,2] for ol in range(30) ],
     )
 
-    tot_time =500
+    tot_time =1300
     tlist = np.linspace(0, tot_time, tot_time)
 
 
@@ -37,8 +37,8 @@ if __name__ == '__main__':
         state_1_dressed,
         state_plus_dressed,
         state_minus_i_dressed,
-        state_0_dressed * state_1_dressed.dag(),
-        state_1_dressed * state_0_dressed.dag(),
+        # state_0_dressed * state_1_dressed.dag(),
+        # state_1_dressed * state_0_dressed.dag(),
         ]
 
     list_of_systems = []
@@ -51,16 +51,17 @@ if __name__ == '__main__':
                 'y0':system.truncate_function(y0) ,
                 'tlist':tlist,
                 'drive_terms':[DriveTerm( 
-                                        driven_op= system.truncate_function(system.hilbertspace.op_in_dressed_eigenbasis(system.osc.n_operator)),
+                                        # driven_op= system.truncate_function(system.hilbertspace.op_in_dressed_eigenbasis(system.osc.n_operator)),
+                                        driven_op= system.a_trunc+system.a_trunc.dag(),
                                         pulse_shape_func=square_pulse_with_rise_fall,
                                         pulse_shape_args={
-                                            'w_d': 7.1722,
-                                            'amp': 0.005,
+                                            'w_d': 7.17308,
+                                            'amp': 0.003,
                                             't_rise': 30,
                                             't_square': tot_time
                                         })],
                 'e_ops':[system.a_trunc , system.a_trunc.dag()*system.a_trunc],
-                'c_ops':[np.sqrt(kappa) * system.a_trunc]
+                # 'c_ops':[np.sqrt(kappa) * system.a_trunc]
                 })
         
 
