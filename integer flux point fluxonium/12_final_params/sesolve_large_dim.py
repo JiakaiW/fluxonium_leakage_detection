@@ -9,8 +9,8 @@ if __name__ == '__main__':
     from multiprocessing import freeze_support
     freeze_support()
 
-    max_ql = 20
-    max_ol = 50
+    max_ql = 15
+    max_ol = 55
     system = FluxoniumOscillatorSystem(
         computaional_states = '1,2',
         EJ = 2.65,
@@ -20,22 +20,19 @@ if __name__ == '__main__':
         g_strength = 0.12,
         qubit_level = max_ql,
         osc_level = max_ol,
-        products_to_keep=[[ql, ol] for ql in [1,2] for ol in range(50) ],
+        products_to_keep=[[ql, ol] for ql in range(max_ql) for ol in range(max_ol) ],
     )
 
-    tot_time =1600
+    tot_time =530
     tlist = np.linspace(0, tot_time, tot_time)
 
-
+    state_leakage_dressed =  qutip.basis(system.hilbertspace.dimension, system.product_to_dressed[(0,0)])
     state_0_dressed = qutip.basis(system.hilbertspace.dimension, system.product_to_dressed[(1,0)])
-    state_1_dressed = qutip.basis(system.hilbertspace.dimension, system.product_to_dressed[(2,0)])
-    state_plus_dressed = (state_0_dressed  +  state_1_dressed).unit()
-    state_minus_i_dressed = (state_0_dressed - 1j * state_1_dressed).unit()
+    state_1_dressed = qutip.basis(system.hilbertspace.dimension, system.product_to_dressed[(2,0)]) 
     initial_states  = [
+        state_leakage_dressed,
         state_0_dressed,
-        state_1_dressed,
-        state_plus_dressed,
-        state_minus_i_dressed
+        state_1_dressed
         ]
     
 
@@ -44,11 +41,11 @@ if __name__ == '__main__':
         initial_states = [system.truncate_function(state) for state in initial_states],
         tlist = tlist,
         drive_terms = [DriveTerm( 
-                        # driven_op= -1j*(system.a_trunc - system.a_trunc.dag()),
+                        # driven_op= (system.a_trunc + system.a_trunc.dag()),
                         driven_op= system.truncate_function(system.hilbertspace.op_in_dressed_eigenbasis(system.osc.n_operator)),
                         pulse_shape_func=square_pulse_with_rise_fall,
                         pulse_shape_args={
-                            'w_d': 7.1730,
+                            'w_d': 7.1722,
                             'amp': 0.005,
                             't_rise': 30,
                             't_square': tot_time,
@@ -57,9 +54,9 @@ if __name__ == '__main__':
         e_ops=[
             system.a_trunc, system.a_trunc.dag()*system.a_trunc
         ],
-        post_processing = ['pad_back','partial_trace_computational_states'],
+        post_processing = ['pad_back'],
     )
 
     import pickle
-    with open('../pickles/12_sesolve.pkl', 'wb') as file:
+    with open('../pickles/large_dim.pkl', 'wb') as file:
         pickle.dump(results, file)
