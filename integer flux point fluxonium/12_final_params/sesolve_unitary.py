@@ -20,10 +20,10 @@ if __name__ == '__main__':
         g_strength = 0.12,
         qubit_level = max_ql,
         osc_level = max_ol,
-        products_to_keep=[[ql, ol] for ql in [1,2] for ol in range(30) ],
+        products_to_keep=[[ql, ol] for ql in [1,2] for ol in range(50) ],
     )
 
-    tot_time =1500
+    tot_time =1600
     tlist = np.linspace(0, tot_time, tot_time)
 
 
@@ -39,10 +39,6 @@ if __name__ == '__main__':
         ]
     
 
-    # initial_states  = [
-    #     qutip.basis(system.hilbertspace.dimension, system.product_to_dressed[(0,0)]),
-    #     qutip.basis(system.hilbertspace.dimension, system.product_to_dressed[(3,0)]),
-    #     ]
 
     results = system.run_mesolve_parrallel(
         initial_states = [system.truncate_function(state) for state in initial_states],
@@ -52,9 +48,9 @@ if __name__ == '__main__':
                         driven_op= system.truncate_function(system.hilbertspace.op_in_dressed_eigenbasis(system.osc.n_operator)),
                         pulse_shape_func=square_pulse_with_rise_fall,
                         pulse_shape_args={
-                            'w_d': 7.1734,
-                            'amp': 0.003,
-                            't_rise': 40,
+                            'w_d': 7.1722,
+                            'amp': 0.005,
+                            't_rise': 30,
                             't_square': tot_time,
                         })],
         c_ops = None,
@@ -63,11 +59,6 @@ if __name__ == '__main__':
         ],
         post_processing = ['pad_back','partial_trace_computational_states'],
     )
-
-
-    # import pickle
-    # with open('../pickles/mesolve_temp_1649_see_domi_frequency.pkl', 'wb') as file:
-    #     pickle.dump(results, file)
 
     import pickle
     with open('../pickles/12_sesolve.pkl', 'wb') as file:

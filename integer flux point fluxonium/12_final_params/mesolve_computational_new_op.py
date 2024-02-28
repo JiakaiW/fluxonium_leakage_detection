@@ -23,7 +23,7 @@ if __name__ == '__main__':
         products_to_keep=[[ql, ol] for ql in [1,2] for ol in range(30) ],
     )
 
-    tot_time =800
+    tot_time =500
     tlist = np.linspace(0, tot_time, tot_time)
 
 
@@ -54,9 +54,9 @@ if __name__ == '__main__':
                                         driven_op= system.truncate_function(system.hilbertspace.op_in_dressed_eigenbasis(system.osc.n_operator)),
                                         pulse_shape_func=square_pulse_with_rise_fall,
                                         pulse_shape_args={
-                                            'w_d': 7.1734,
-                                            'amp': 0.006,
-                                            't_rise': 40,
+                                            'w_d': 7.1722,
+                                            'amp': 0.005,
+                                            't_rise': 30,
                                             't_square': tot_time
                                         })],
                 'e_ops':[system.a_trunc , system.a_trunc.dag()*system.a_trunc],
