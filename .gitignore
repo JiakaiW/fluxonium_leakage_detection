@@ -71,3 +71,10 @@ integer flux point fluxonium/pickles/chi_lists_local_2.pkl
 integer flux point fluxonium/pickles/chi_lists_local.pkl
 integer flux point fluxonium/pickles/magic_compu_uni.pkl
 integer flux point fluxonium/pickles/magic_leak_uni.pkl
+integer flux point fluxonium/pickles/magic_large_dim.pkl
+integer flux point fluxonium/pickles/magic_leak_uni_additional.pkl
+integer flux point fluxonium/pickles/magic_leak_uni_1em3.pkl
+integer flux point fluxonium/pickles/magic_compu_1em3.pkl
+integer flux point fluxonium/pickles/magic_leak_1em3.pkl
+integer flux point fluxonium/pickles/magic_sesolve_large_dim_list.pkl
+integer flux point fluxonium/pickles/magic_sesolve_large_dim_list_pop.pkl

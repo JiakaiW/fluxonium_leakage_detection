@@ -20,7 +20,7 @@ if __name__ == '__main__':
         g_strength = 0.23,
         qubit_level = max_ql,
         osc_level = max_ol,
-        products_to_keep=[[ql, ol] for ql in [0] for ol in range(70) ],
+        products_to_keep=[[ql, ol] for ql in [0] for ol in range(50) ],
         computaional_states = '1,2',
         )
     tot_time =700
@@ -63,5 +63,5 @@ if __name__ == '__main__':
 
 
     import pickle
-    with open('../pickles/magic_leak_1em3.pkl', 'wb') as file:
+    with open('../pickles/magic_leak_uni_1em3.pkl', 'wb') as file:
         pickle.dump(results, file)
