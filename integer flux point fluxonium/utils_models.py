@@ -296,7 +296,7 @@ def ODEsolve_and_post_process(
             c_ops=c_ops,
             e_ops = e_ops,
             args=additional_args,
-            options=qutip.Options(store_states=store_states, nsteps=80000, num_cpus=1),
+            options=qutip.Options(store_states=store_states, nsteps=120000, num_cpus=1),
             progress_bar = qutip.ui.progressbar.EnhancedTextProgressBar(),
         )
 

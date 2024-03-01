@@ -31,18 +31,14 @@ if __name__ == '__main__':
     state_0_dressed = qutip.basis(system_computational.hilbertspace.dimension, system_computational.product_to_dressed[(1,0)])
     state_1_dressed = qutip.basis(system_computational.hilbertspace.dimension, system_computational.product_to_dressed[(2,0)])
     state_plus_dressed = (state_0_dressed  +  state_1_dressed).unit()
-    state_minus_dressed = (state_0_dressed  -  state_1_dressed).unit()
-    state_plus_i_dressed = (state_0_dressed + 1j * state_1_dressed).unit()
     state_minus_i_dressed = (state_0_dressed - 1j * state_1_dressed).unit()
     initial_states  = [
-        state_0_dressed,
-        state_1_dressed,
-        state_plus_dressed,
-        state_minus_dressed,
-        state_plus_i_dressed,
-        state_minus_i_dressed,
-        # state_0_dressed * state_1_dressed.dag(),
-        # state_1_dressed * state_0_dressed.dag(),
+        # state_0_dressed,
+        # state_1_dressed,
+        # state_plus_dressed,
+        # state_minus_i_dressed,
+        state_0_dressed * state_1_dressed.dag(),
+        state_1_dressed * state_0_dressed.dag(),
         ]
 
     list_of_systems = []
@@ -77,5 +73,5 @@ if __name__ == '__main__':
 
 
     import pickle
-    with open('../pickles/12_mesolve_computational_1734_tomo.pkl', 'wb') as file:
+    with open('../pickles/12_mesolve_computational_pauli.pkl', 'wb') as file:
         pickle.dump(results, file)
