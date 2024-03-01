@@ -62,3 +62,8 @@ integer flux point fluxonium/pickles/12_mesolve_leakage.pkl
 integer flux point fluxonium/pickles/12_mesolve_leakage.pkl
 integer flux point fluxonium/pickles/12_mesolve_leakage_1734.pkl
 integer flux point fluxonium/pickles/12_mesolve_computational_1734.pkl
+integer flux point fluxonium/pickles/sesolve_large_dim_list.pkl
+integer flux point fluxonium/pickles/12_mesolve_computational_unitary.pkl
+integer flux point fluxonium/pickles/large_dim.pkl
+integer flux point fluxonium/pickles/12_mesolve_computational_unitary_rise.pkl
+integer flux point fluxonium/pickles/12_mesolve_computational_Pauli.pkl
