@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scqubits
 import qutip
-from typing import Union
+from typing import Union,List
 
 
 def transition_frequency(hilbertspace,s0: int, s1: int) -> float:
@@ -106,7 +106,9 @@ def dressed_to_2_level_dm(dressed_dm: qutip.Qobj,
                         qbt_position: int,
                         computational_0: int,
                         computational_1: int,
-                        products_to_keep=None) -> qutip.Qobj:
+                        products_to_keep=None,
+                        dressed_idxes_with_negative_sign: List[int] = None,
+                        ) -> qutip.Qobj:
     """
     Convert a dressed density matrix to a multi-level density matrix for specified computational states,
     inferring subsystem dimensions from product_to_dressed.
@@ -148,11 +150,6 @@ def dressed_to_2_level_dm(dressed_dm: qutip.Qobj,
     rho_product = qutip.Qobj(rho_product, dims=[subsystem_dims, subsystem_dims])
 
     rho_2_level = rho_product.ptrace(qbt_position)
-
-    # rho_2_level = qutip.Qobj(np.array([
-    #         [qubit_rho[computational_0, computational_0],qubit_rho[computational_0, computational_1]],
-    #         [qubit_rho[computational_1, computational_0],qubit_rho[computational_1, computational_1]]
-    #     ]),dims=[[2],[2]])
 
     return rho_2_level
 
