@@ -79,3 +79,8 @@ integer flux point fluxonium/pickles/magic_leak_1em3.pkl
 integer flux point fluxonium/pickles/magic_sesolve_large_dim_list.pkl
 integer flux point fluxonium/pickles/magic_sesolve_large_dim_list_pop.pkl
 integer flux point fluxonium/pickles/magic_compu_1em3_relabel.pkl
+integer flux point fluxonium/pickles/detection_sensitivity.pkl
+integer flux point fluxonium/pickles/transmon_response.pkl
+integer flux point fluxonium/pickles/transmon_response_big_amp.pkl
+integer flux point fluxonium/pickles/try_new_params_compu.pkl
+integer flux point fluxonium/pickles/try_new_params_leak.pkl

@@ -136,13 +136,22 @@ def dressed_to_2_level_dm(dressed_dm: qutip.Qobj,
             new_product_state[qbt_position] = 0 if product_state[qbt_position] == computational_0 else 1
             filtered_product_to_dressed[tuple(new_product_state)] = dressed_index
 
+    
+    # Convert dressed_idxes_with_negative_sign to a set for O(1) lookup
+    dressed_idxes_with_negative_sign_set = set(dressed_idxes_with_negative_sign)
+    # Pre-compute the sign multiplier for each dressed index
+    sign_multiplier = {idx: -1 if idx in dressed_idxes_with_negative_sign_set else 1
+                    for idx in filtered_product_to_dressed.values()}
+
+
+
     # Infer subsystem dimensions
     subsystem_dims = [max(indexes) + 1 for indexes in zip(*product_to_dressed.keys())]
     subsystem_dims[qbt_position] = 2
     rho_product = np.zeros((subsystem_dims*2), dtype=complex)
     for product_state, dressed_index1 in filtered_product_to_dressed.items():
         for product_state2, dressed_index2 in filtered_product_to_dressed.items():
-            element = dressed_dm_data[dressed_index1, dressed_index2]
+            element = dressed_dm_data[dressed_index1, dressed_index2] * sign_multiplier[dressed_index1] * sign_multiplier[dressed_index2]
             rho_product[product_state+product_state2] += element
 
     two_lvl_qbt_dm_size = np.prod(subsystem_dims)
@@ -150,7 +159,6 @@ def dressed_to_2_level_dm(dressed_dm: qutip.Qobj,
     rho_product = qutip.Qobj(rho_product, dims=[subsystem_dims, subsystem_dims])
 
     rho_2_level = rho_product.ptrace(qbt_position)
-
     return rho_2_level
 
 

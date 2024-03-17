@@ -9,25 +9,22 @@ if __name__ == '__main__':
     from multiprocessing import freeze_support
     freeze_support()
 
-    max_ql = 21
-    max_ol = 98
+    max_ql = 15
+    max_ol = 70
 
     system_computational = FluxoniumOscillatorSystem(
-        EJ = 2.75,
+        EJ = 2.7,
         EC = 0.6,
         EL = 0.13,
-        Er = 7.20701708,
-        g_strength = 0.23,
+        Er = 7.19094727,
+        g_strength = 0.21,
         qubit_level = max_ql,
         osc_level = max_ol,
-        products_to_keep=[[ql, ol] for ql in [1,2] for ol in range(25) ],
+        products_to_keep=[[ql, ol] for ql in [1,2] for ol in range(35) ],
         computaional_states = '1,2',
         )
-
-
-    tot_time =700
+    tot_time =900
     tlist = np.linspace(0, tot_time, tot_time)
-
 
 
     state_0_dressed = qutip.basis(system_computational.hilbertspace.dimension, system_computational.product_to_dressed[(1,0)])
@@ -44,8 +41,8 @@ if __name__ == '__main__':
         state_plus_i_dressed,
         state_minus_i_dressed,
 
-        state_0_dressed * state_1_dressed.dag(),
-        state_1_dressed * state_0_dressed.dag(),
+        # state_0_dressed * state_1_dressed.dag(),
+        # state_1_dressed * state_0_dressed.dag(),
         ]
 
     list_of_systems = []
@@ -63,13 +60,13 @@ if __name__ == '__main__':
                                         # driven_op=  system.a_trunc + system.a_trunc.dag()  ,
                                         pulse_shape_func=square_pulse_with_rise_fall,
                                         pulse_shape_args={
-                                            'w_d': 7.20666,
+                                            'w_d': 7.1905,
                                             'amp': 0.003,
                                             't_rise': 40,
                                             't_square': tot_time
                                         })],
                 'e_ops':[system.a_trunc , system.a_trunc.dag()*system.a_trunc],
-                'c_ops':[np.sqrt(kappa) * system.a_trunc]
+                # 'c_ops':[np.sqrt(kappa) * system.a_trunc]
                 })
         
 
@@ -81,5 +78,5 @@ if __name__ == '__main__':
 
 
     import pickle
-    with open('../pickles/magic_compu_1em3.pkl', 'wb') as file:
+    with open('../pickles/try_new_params_compu.pkl', 'wb') as file:
         pickle.dump(results, file)

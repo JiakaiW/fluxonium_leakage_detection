@@ -8,7 +8,7 @@ import qutip
 import scqubits
 from typing import List, Any, Union, Tuple, Callable, Dict
 from tqdm.notebook import tqdm
-
+import copy
 # from utils_qiskit import *
 from utils_visualization import *
 from utils_basic_funcs import *
@@ -52,10 +52,24 @@ class CoupledSystem:
         self.products_to_keep = products_to_keep
 
         self.evals = self.hilbertspace["evals"][0]
+
+
+        evals, evecs = self.hilbertspace.hamiltonian().eigenstates()
+        self.evals = evals
         self.diag_dressed_hamiltonian = self.truncate_function(qutip.Qobj((
                 2 * np.pi * qutip.Qobj(np.diag(self.evals),
                 dims=[self.hilbertspace.subsystem_dims] * 2)
         )[:, :]))
+
+        self.dressed_idxes_with_negative_sign = []
+        for i in range(self.hilbertspace.dimension):
+            arr = np.array(evecs[i])
+            max_abs_index = np.argmax(np.abs(arr))
+            max_abs_value = arr[max_abs_index]
+            if max_abs_value > 0:
+                pass
+            elif max_abs_value < 0:
+                self.dressed_idxes_with_negative_sign.append(i)
 
     def truncate_function(self,qobj):
         return truncate_custom(qobj, self.products_to_keep, self.product_to_dressed)
@@ -90,7 +104,8 @@ class CoupledSystem:
                                         self.qbt_position, 
                                         self.computaional_states[0],
                                         self.computaional_states[1],
-                                        None))
+                                        None,
+                                        self.dressed_idxes_with_negative_sign))
             
 
         results = [None] * len(initial_states)
@@ -115,6 +130,40 @@ class CoupledSystem:
 
         return results
     
+
+
+
+class FluxoniumTunableTransmonSystem(CoupledSystem):
+    '''
+    To model leakage detection of 12 fluxonium
+    '''
+    def __init__(self,
+                fluxonium: scqubits.Fluxonium,
+                tune_tmon: scqubits.TunableTransmon,
+
+
+                computaional_states:str, # = '0,1' or '1,2'
+                
+                g_strength:float = 0.18,
+
+                products_to_keep: List[List[int]]= None,
+                w_d:float = None
+                ):
+        '''
+        Initialize objects before truncation
+        '''
+        
+        self.fluxonium = fluxonium
+        self.tune_tmon = tune_tmon
+        hilbertspace = scqubits.HilbertSpace([self.fluxonium, self.tune_tmon])
+        hilbertspace.add_interaction(g_strength=g_strength,op1=self.fluxonium.n_operator, op2=self.tune_tmon.n_operator,add_hc=False)
+        
+        super().__init__(hilbertspace = hilbertspace,
+                         products_to_keep = products_to_keep,
+                         qbt_position = 0,
+                        computaional_states = [int(computaional_states[0]),int(computaional_states[-1])])
+
+
 
 
 
@@ -367,7 +416,8 @@ def run_parallel_ODEsolve_and_post_process_jobs_with_different_systems(
                                             list_of_systems[i].qbt_position, 
                                             list_of_systems[i].computaional_states[0],
                                             list_of_systems[i].computaional_states[1],
-                                            None))
+                                            None,
+                                            list_of_systems[i].dressed_idxes_with_negative_sign))
             future = executor.submit(
                 ODEsolve_and_post_process, 
                 y0=list_of_kwargs[i]['y0'], 
