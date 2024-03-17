@@ -239,64 +239,64 @@ class FluxoniumOscillatorSystem(CoupledSystem):
         
         
         
+# Obsolete
+# class FluxoniumOscillatorFilterSystem(CoupledSystem):
+#     '''
+#     To model leakage detection of 12 fluxonium with purcell filter
+#     '''
+#     def __init__(self,
+#                 computaional_states:str, # = '0,1' or '1,2'
 
-class FluxoniumOscillatorFilterSystem(CoupledSystem):
-    '''
-    To model leakage detection of 12 fluxonium with purcell filter
-    '''
-    def __init__(self,
-                computaional_states:str, # = '0,1' or '1,2'
-
-                EJ:float = 2.33,
-                EC:float = 0.69,
-                EL:float = 0.12,
-                qubit_level:float = 13,
+#                 EJ:float = 2.33,
+#                 EC:float = 0.69,
+#                 EL:float = 0.12,
+#                 qubit_level:float = 13,
                 
                 
-                Er:float = 7.16518677,
-                osc_level:float = 20,
+#                 Er:float = 7.16518677,
+#                 osc_level:float = 20,
                 
-                Ef:float = 7.13,
-                filter_level:float = 7,
-                kappa_f = 1.5, # Ef *2pi = omega_f,  kappa_f = omega_f / Q , kappa_f^{-1} = 0.67 ns
+#                 Ef:float = 7.13,
+#                 filter_level:float = 7,
+#                 kappa_f = 1.5, # Ef *2pi = omega_f,  kappa_f = omega_f / Q , kappa_f^{-1} = 0.67 ns
 
-                g_strength:float = 0.18,
-                G_strength:float = 0.3, # G satisfies a relation with omega_r in equation 10 of Phys. Rev A 92. 012325 (2015)
+#                 g_strength:float = 0.18,
+#                 G_strength:float = 0.3, # G satisfies a relation with omega_r in equation 10 of Phys. Rev A 92. 012325 (2015)
 
-                products_to_keep: List[List[int]]= None,
-                w_d:float = None,
-                ):
+#                 products_to_keep: List[List[int]]= None,
+#                 w_d:float = None,
+#                 ):
 
 
-        # Q_f = 30
-        # kappa_f = Ef * 2 * np.pi / Q_f
-        # kappa_r = 0.0001 #we want a really small effective readout resonator decay rate to reduce purcell decay
-        # G_strength =np.sqrt(kappa_f * kappa_r * ( 1 + (2*(Er-Ef)*2*np.pi/kappa_f )**2 ) /4)
+#         # Q_f = 30
+#         # kappa_f = Ef * 2 * np.pi / Q_f
+#         # kappa_r = 0.0001 #we want a really small effective readout resonator decay rate to reduce purcell decay
+#         # G_strength =np.sqrt(kappa_f * kappa_r * ( 1 + (2*(Er-Ef)*2*np.pi/kappa_f )**2 ) /4)
 
-        self.G_strength = G_strength
+#         self.G_strength = G_strength
 
-        self.qbt = scqubits.Fluxonium(EJ=EJ,EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
-        self.osc = scqubits.Oscillator(E_osc=Er,truncated_dim=osc_level)
-        self.filter = scqubits.Oscillator(E_osc=Ef,truncated_dim=filter_level)
-        hilbertspace = scqubits.HilbertSpace([self.qbt, self.osc,self.filter])
-        hilbertspace.add_interaction(g_strength=g_strength,op1=self.qbt.n_operator,op2=self.osc.creation_operator,add_hc=True)
-        hilbertspace.add_interaction(g_strength=G_strength,op1=self.osc.creation_operator,op2=self.filter.annihilation_operator,add_hc=True)
+#         self.qbt = scqubits.Fluxonium(EJ=EJ,EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
+#         self.osc = scqubits.Oscillator(E_osc=Er,truncated_dim=osc_level)
+#         self.filter = scqubits.Oscillator(E_osc=Ef,truncated_dim=filter_level)
+#         hilbertspace = scqubits.HilbertSpace([self.qbt, self.osc,self.filter])
+#         hilbertspace.add_interaction(g_strength=g_strength,op1=self.qbt.n_operator,op2=self.osc.creation_operator,add_hc=True)
+#         hilbertspace.add_interaction(g_strength=G_strength,op1=self.osc.creation_operator,op2=self.filter.annihilation_operator,add_hc=True)
 
-        super().__init__(hilbertspace = hilbertspace,
-                         products_to_keep = products_to_keep,
-                         qbt_position = 0,
-                        computaional_states = [int(computaional_states[0]),int(computaional_states[-1])])
+#         super().__init__(hilbertspace = hilbertspace,
+#                          products_to_keep = products_to_keep,
+#                          qbt_position = 0,
+#                         computaional_states = [int(computaional_states[0]),int(computaional_states[-1])])
 
-        self.a = qutip.Qobj(self.hilbertspace.op_in_dressed_eigenbasis(self.osc.annihilation_operator)[:, :])
-        self.a_trunc = self.truncate_function(self.a)
+#         self.a = qutip.Qobj(self.hilbertspace.op_in_dressed_eigenbasis(self.osc.annihilation_operator)[:, :])
+#         self.a_trunc = self.truncate_function(self.a)
 
-        self.b = qutip.Qobj(self.hilbertspace.op_in_dressed_eigenbasis(self.filter.annihilation_operator)[:, :])
-        self.b_trunc = self.truncate_function(self.b)
-        self.driven_operator =   self.b_trunc+self.b_trunc.dag()
-        self.c_ops = [np.sqrt(kappa_f) * self.b_trunc]
+#         self.b = qutip.Qobj(self.hilbertspace.op_in_dressed_eigenbasis(self.filter.annihilation_operator)[:, :])
+#         self.b_trunc = self.truncate_function(self.b)
+#         self.driven_operator =   self.b_trunc+self.b_trunc.dag()
+#         self.c_ops = [np.sqrt(kappa_f) * self.b_trunc]
         
-        if w_d!= None:
-            self.w_d = w_d
+#         if w_d!= None:
+#             self.w_d = w_d
 
      
 
@@ -311,7 +311,7 @@ def ODEsolve_and_post_process(
             e_ops:Union[None,List[qutip.Qobj]] = None,
 
             store_states = True,
-            method:str = 'mesolve',
+            method:str = 'qutip.mesolve',
             post_processing_funcs:List=[],
             post_processing_args:List=[],
             ):
@@ -337,7 +337,7 @@ def ODEsolve_and_post_process(
             else:
                 additional_args[key] = drive_term.pulse_shape_args[key]
 
-    if method == 'mesolve':
+    if method == 'qutip.mesolve':
         result = qutip.mesolve(
             rho0=y0,
             H=H_with_drives,
@@ -349,7 +349,7 @@ def ODEsolve_and_post_process(
             progress_bar = qutip.ui.progressbar.EnhancedTextProgressBar(),
         )
 
-    elif method == 'mcsolve':
+    elif method == 'qutip.mcsolve':
         result = qutip.mcsolve(psi0=y0, 
                             H= H_with_drives,
                             tlist=tlist,
@@ -360,6 +360,8 @@ def ODEsolve_and_post_process(
                             options=qutip.Options(store_states=True,num_cpus = None),
                             progress_bar = qutip.ui.progressbar.EnhancedTextProgressBar(),
                             )
+    else:
+        raise Exception("solver method not supported")
 
     # for func, args in zip(post_processing_funcs, post_processing_args):
     #     result.states = [func(state, *args) for state in tqdm(result.states, desc=f"Processing states with {func.__name__}")]
