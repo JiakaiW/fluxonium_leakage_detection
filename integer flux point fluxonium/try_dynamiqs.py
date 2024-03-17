@@ -16,7 +16,7 @@ tsave = jnp.linspace(0, 1000, 1000)
 
 # run simulation  
 result = dq.mesolve( H,
-                     [], 
+                     jump_ops, 
                     psi0, 
                     tsave,
                     options=dq.Options(verbose=True))

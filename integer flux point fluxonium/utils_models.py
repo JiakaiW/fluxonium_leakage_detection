@@ -1,6 +1,7 @@
 
 import concurrent
 from dataclasses import dataclass
+import dynamiqs as dq
 from itertools import product
 import numpy as np
 import pickle
@@ -61,7 +62,17 @@ class CoupledSystem:
                 dims=[self.hilbertspace.subsystem_dims] * 2)
         )[:, :]))
 
-        self.dressed_idxes_with_negative_sign = []
+
+        # Filter product_to_dressed so that it contains only state relevant to the two qubit computational states,
+        # Also modify the original qubit index in the product indices to 0 and 1.
+        self.filtered_product_to_dressed = {}
+        for product_state, dressed_index in self.product_to_dressed.items():
+            if product_state[qbt_position] in (self.computaional_states[0], self.computaional_states[1]):
+                new_product_state = list(product_state)
+                new_product_state[qbt_position] = 0 if product_state[qbt_position] == self.computaional_states[0] else 1
+                self.filtered_product_to_dressed[tuple(new_product_state)] = dressed_index
+
+        dressed_idxes_with_negative_sign = []
         for i in range(self.hilbertspace.dimension):
             arr = np.array(evecs[i])
             max_abs_index = np.argmax(np.abs(arr))
@@ -69,7 +80,15 @@ class CoupledSystem:
             if max_abs_value > 0:
                 pass
             elif max_abs_value < 0:
-                self.dressed_idxes_with_negative_sign.append(i)
+                dressed_idxes_with_negative_sign.append(i)
+        # Convert dressed_idxes_with_negative_sign to a set for O(1) lookup
+        dressed_idxes_with_negative_sign_set = set(dressed_idxes_with_negative_sign)
+        
+        # Pre-compute the sign multiplier for each dressed index
+        self.sign_multiplier = {idx: -1 if idx in dressed_idxes_with_negative_sign_set else 1
+                        for idx in self.filtered_product_to_dressed.values()}
+
+
 
     def truncate_function(self,qobj):
         return truncate_custom(qobj, self.products_to_keep, self.product_to_dressed)
@@ -77,7 +96,7 @@ class CoupledSystem:
     def pad_back_function(self,qobj):
         return pad_back_custom(qobj, self.products_to_keep, self.product_to_dressed)
         
-    def run_mesolve_parrallel(self,
+    def run_qutip_mesolve_parrallel(self,
                     initial_states: qutip.Qobj, # truncated initial states
                     tlist: np.array, 
                     drive_terms: List[DriveTerm],
@@ -102,10 +121,10 @@ class CoupledSystem:
             post_processing_args.append((
                                         self.product_to_dressed,
                                         self.qbt_position, 
-                                        self.computaional_states[0],
-                                        self.computaional_states[1],
-                                        None,
-                                        self.dressed_idxes_with_negative_sign))
+                                        self.filtered_product_to_dressed,
+                                        self.sign_multiplier,
+                                        None
+                                        ))
             
 
         results = [None] * len(initial_states)
@@ -114,7 +133,7 @@ class CoupledSystem:
                                         y0=initial_states[i], 
                                         tlist=tlist,    
 
-                                        static_hamiltonian = [self.diag_dressed_hamiltonian],
+                                        static_hamiltonian = self.diag_dressed_hamiltonian,
                                         drive_terms=drive_terms,
                                         c_ops=c_ops,
                                         e_ops = e_ops,
@@ -130,6 +149,79 @@ class CoupledSystem:
 
         return results
     
+        
+    def run_dq_mesolve_parrallel(self,
+                        initial_states: qutip.Qobj, # truncated initial states
+                        tlist: np.array, 
+                        drive_terms: List[DriveTerm],
+                        c_ops: Union[None,List[qutip.Qobj]] = None,
+                        e_ops:Union[None,List[qutip.Qobj]] = None,
+
+                        post_processing = ['pad_back'],
+                        ):
+            '''
+            This function runs dq.mesolve or dq.sesolve using dq's parrellelism,
+            then convert dq.Result into a list of qutip.Result
+            and finally use cpu multiprocessing to do post processing
+            '''
+            if c_ops == [] or c_ops == None:
+                result = dq.sesolve(
+                    H = self.diag_dressed_hamiltonian,
+                    rho0 = initial_states,
+                    tsave = tlist,
+                    exp_ops = e_ops,
+                    )
+            else:
+                result = dq.mesolve(
+                    H = self.diag_dressed_hamiltonian,
+                    jump_ops = c_ops,
+                    rho0 = initial_states,
+                    tsave = tlist,
+                    exp_ops = e_ops,
+                    )
+            
+            
+            # Convert dq.Result to a list of qutip.Result
+            results = [qutip.Result(solver = 'dynamiqs',
+                                    times = tlist,
+                                    expect = result.expects[i],
+                                    states = result.states[i],
+                                    num_expect = len(e_ops),
+                                    num_collapse = len(c_ops)
+                                    )
+                         for i in range(len(initial_states))]
+            
+
+            post_processed_results = [None] * len(results)
+            post_processing_funcs = []
+            post_processing_args = []
+            if 'pad_back' in post_processing:
+                post_processing_funcs.append(pad_back_custom)
+                post_processing_args.append((self.products_to_keep, 
+                                    self.product_to_dressed))
+            if 'partial_trace_computational_states' in post_processing:
+                post_processing_funcs.append(dressed_to_2_level_dm)
+                post_processing_args.append((
+                                            self.product_to_dressed,
+                                            self.qbt_position, 
+                                            self.filtered_product_to_dressed,
+                                            self.sign_multiplier,
+                                            None
+                                            ))                
+
+            with concurrent.futures.ProcessPoolExecutor(max_workers=None) as executor:
+                futures = {executor.submit(post_process, 
+                                            result = results[i],
+                                            post_processing_funcs=post_processing_funcs,
+                                            post_processing_args=post_processing_args,
+                                            ): i for i in range(len(results))}
+                
+                for future in concurrent.futures.as_completed(futures):
+                    original_index = futures[future]
+                    post_processed_results[original_index] = future.result()
+
+            return post_processed_results
+        
 
 
 
@@ -172,7 +264,7 @@ class FluxoniumOscillatorSystem(CoupledSystem):
     To model leakage detection of 12 fluxonium
     '''
     def __init__(self,
-                computaional_states:str, # = '0,1' or '1,2'
+                computaional_states: str = '1,2',
                 drive_transition: Tuple[int] = None,
 
                 EJ:float = 2.33,
@@ -239,67 +331,84 @@ class FluxoniumOscillatorSystem(CoupledSystem):
         
         
         
-# Obsolete
-# class FluxoniumOscillatorFilterSystem(CoupledSystem):
-#     '''
-#     To model leakage detection of 12 fluxonium with purcell filter
-#     '''
-#     def __init__(self,
-#                 computaional_states:str, # = '0,1' or '1,2'
+class FluxoniumOscillatorFilterSystem(CoupledSystem):
+    '''
+    To model leakage detection of 12 fluxonium with purcell filter
+    '''
+    def __init__(self,
+                computaional_states:str, # = '0,1' or '1,2'
 
-#                 EJ:float = 2.33,
-#                 EC:float = 0.69,
-#                 EL:float = 0.12,
-#                 qubit_level:float = 13,
+                EJ:float = 2.33,
+                EC:float = 0.69,
+                EL:float = 0.12,
+                qubit_level:float = 13,
                 
                 
-#                 Er:float = 7.16518677,
-#                 osc_level:float = 20,
+                Er:float = 7.16518677,
+                osc_level:float = 20,
                 
-#                 Ef:float = 7.13,
-#                 filter_level:float = 7,
-#                 kappa_f = 1.5, # Ef *2pi = omega_f,  kappa_f = omega_f / Q , kappa_f^{-1} = 0.67 ns
+                Ef:float = 7.13,
+                filter_level:float = 7,
+                kappa_f = 1.5, # Ef *2pi = omega_f,  kappa_f = omega_f / Q , kappa_f^{-1} = 0.67 ns
 
-#                 g_strength:float = 0.18,
-#                 G_strength:float = 0.3, # G satisfies a relation with omega_r in equation 10 of Phys. Rev A 92. 012325 (2015)
+                g_strength:float = 0.18,
+                G_strength:float = 0.3, # G satisfies a relation with omega_r in equation 10 of Phys. Rev A 92. 012325 (2015)
 
-#                 products_to_keep: List[List[int]]= None,
-#                 w_d:float = None,
-#                 ):
+                products_to_keep: List[List[int]]= None,
+                w_d:float = None,
+                ):
 
 
-#         # Q_f = 30
-#         # kappa_f = Ef * 2 * np.pi / Q_f
-#         # kappa_r = 0.0001 #we want a really small effective readout resonator decay rate to reduce purcell decay
-#         # G_strength =np.sqrt(kappa_f * kappa_r * ( 1 + (2*(Er-Ef)*2*np.pi/kappa_f )**2 ) /4)
+        # Q_f = 30
+        # kappa_f = Ef * 2 * np.pi / Q_f
+        # kappa_r = 0.0001 #we want a really small effective readout resonator decay rate to reduce purcell decay
+        # G_strength =np.sqrt(kappa_f * kappa_r * ( 1 + (2*(Er-Ef)*2*np.pi/kappa_f )**2 ) /4)
 
-#         self.G_strength = G_strength
+        self.G_strength = G_strength
 
-#         self.qbt = scqubits.Fluxonium(EJ=EJ,EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
-#         self.osc = scqubits.Oscillator(E_osc=Er,truncated_dim=osc_level)
-#         self.filter = scqubits.Oscillator(E_osc=Ef,truncated_dim=filter_level)
-#         hilbertspace = scqubits.HilbertSpace([self.qbt, self.osc,self.filter])
-#         hilbertspace.add_interaction(g_strength=g_strength,op1=self.qbt.n_operator,op2=self.osc.creation_operator,add_hc=True)
-#         hilbertspace.add_interaction(g_strength=G_strength,op1=self.osc.creation_operator,op2=self.filter.annihilation_operator,add_hc=True)
+        self.qbt = scqubits.Fluxonium(EJ=EJ,EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
+        self.osc = scqubits.Oscillator(E_osc=Er,truncated_dim=osc_level)
+        self.filter = scqubits.Oscillator(E_osc=Ef,truncated_dim=filter_level)
+        hilbertspace = scqubits.HilbertSpace([self.qbt, self.osc,self.filter])
+        hilbertspace.add_interaction(g_strength=g_strength,op1=self.qbt.n_operator,op2=self.osc.creation_operator,add_hc=True)
+        hilbertspace.add_interaction(g_strength=G_strength,op1=self.osc.creation_operator,op2=self.filter.annihilation_operator,add_hc=True)
 
-#         super().__init__(hilbertspace = hilbertspace,
-#                          products_to_keep = products_to_keep,
-#                          qbt_position = 0,
-#                         computaional_states = [int(computaional_states[0]),int(computaional_states[-1])])
+        super().__init__(hilbertspace = hilbertspace,
+                         products_to_keep = products_to_keep,
+                         qbt_position = 0,
+                        computaional_states = [int(computaional_states[0]),int(computaional_states[-1])])
 
-#         self.a = qutip.Qobj(self.hilbertspace.op_in_dressed_eigenbasis(self.osc.annihilation_operator)[:, :])
-#         self.a_trunc = self.truncate_function(self.a)
+        self.a = qutip.Qobj(self.hilbertspace.op_in_dressed_eigenbasis(self.osc.annihilation_operator)[:, :])
+        self.a_trunc = self.truncate_function(self.a)
 
-#         self.b = qutip.Qobj(self.hilbertspace.op_in_dressed_eigenbasis(self.filter.annihilation_operator)[:, :])
-#         self.b_trunc = self.truncate_function(self.b)
-#         self.driven_operator =   self.b_trunc+self.b_trunc.dag()
-#         self.c_ops = [np.sqrt(kappa_f) * self.b_trunc]
+        self.b = qutip.Qobj(self.hilbertspace.op_in_dressed_eigenbasis(self.filter.annihilation_operator)[:, :])
+        self.b_trunc = self.truncate_function(self.b)
+        self.driven_operator =   self.b_trunc+self.b_trunc.dag()
+        self.c_ops = [np.sqrt(kappa_f) * self.b_trunc]
         
-#         if w_d!= None:
-#             self.w_d = w_d
+        if w_d!= None:
+            self.w_d = w_d
 
      
 
+
+
+def post_process(
+            result:qutip.Result,
+            post_processing_funcs:List=[],
+            post_processing_args:List=[],
+            ):
+    # for func, args in zip(post_processing_funcs, post_processing_args):
+    #     result.states = [func(state, *args) for state in tqdm(result.states, desc=f"Processing states with {func.__name__}")]
+
+    # Editted post processing so that it doesn't overwrite result.states
+    last_attribute_name = "states"
+    for func, args in zip(post_processing_funcs, post_processing_args):
+        new_attr_name = f"states_{func.__name__}" 
+        processed_states = [func(state, *args) for state in tqdm( getattr(result, last_attribute_name), desc=f"Processing states with {func.__name__}")]
+        setattr(result, new_attr_name, processed_states)
+        last_attribute_name = new_attr_name
+    return result
 
 def ODEsolve_and_post_process(
             y0: qutip.Qobj,
@@ -324,9 +433,8 @@ def ODEsolve_and_post_process(
             then assemble the two into an H_with_drive
         a list of c_ops
     '''
-    static_hamiltonian = [static_hamiltonian] if type(static_hamiltonian) != list else static_hamiltonian
     
-    H_with_drives =  static_hamiltonian + \
+    H_with_drives =  [static_hamiltonian] + \
           [[drive_term.driven_op, drive_term.pulse_shape_func] for drive_term in drive_terms]
     
     additional_args = {}
@@ -363,17 +471,14 @@ def ODEsolve_and_post_process(
     else:
         raise Exception("solver method not supported")
 
-    # for func, args in zip(post_processing_funcs, post_processing_args):
-    #     result.states = [func(state, *args) for state in tqdm(result.states, desc=f"Processing states with {func.__name__}")]
 
-    # Editted post processing so that it doesn't overwrite result.states
-    last_attribute_name = "states"
-    for func, args in zip(post_processing_funcs, post_processing_args):
-        new_attr_name = f"states_{func.__name__}" 
-        processed_states = [func(state, *args) for state in tqdm( getattr(result, last_attribute_name), desc=f"Processing states with {func.__name__}")]
-        setattr(result, new_attr_name, processed_states)
-        last_attribute_name = new_attr_name
+    result = post_process(result,
+                                 post_processing_funcs,
+                                post_processing_args)
     return result
+
+
+
 
 
 
@@ -416,16 +521,16 @@ def run_parallel_ODEsolve_and_post_process_jobs_with_different_systems(
                 post_processing_args.append((
                                             list_of_systems[i].product_to_dressed,
                                             list_of_systems[i].qbt_position, 
-                                            list_of_systems[i].computaional_states[0],
-                                            list_of_systems[i].computaional_states[1],
-                                            None,
-                                            list_of_systems[i].dressed_idxes_with_negative_sign))
+                                            list_of_systems[i].filtered_product_to_dressed,
+                                            list_of_systems[i].sign_multiplier,
+                                            None
+                                            ))
             future = executor.submit(
                 ODEsolve_and_post_process, 
                 y0=list_of_kwargs[i]['y0'], 
                 tlist=list_of_kwargs[i]['tlist'], 
 
-                static_hamiltonian=[list_of_systems[i].diag_dressed_hamiltonian],
+                static_hamiltonian=list_of_systems[i].diag_dressed_hamiltonian,
                 drive_terms=list_of_kwargs[i].get('drive_terms', None),
                 c_ops=list_of_kwargs[i].get('c_ops', None),
                 e_ops=list_of_kwargs[i].get('e_ops', None),
@@ -441,6 +546,24 @@ def run_parallel_ODEsolve_and_post_process_jobs_with_different_systems(
 
 
 
+
+
+def run_dq_ODEsolve_and_post_process_jobs_with_different_systems(
+        list_of_systems: List[CoupledSystem],
+        list_of_kwargs: list[Any],
+        max_workers = None,
+        store_states = True,
+        post_processing = ['pad_back'],
+    ):
+    '''
+    # This function runs dynamiqs's mesolve or sesolve using the concurrency of dynamiqs, 
+    #     and then use cpu parrallization to do post processing.
+    # Function signature is intentionally kept the same as run_parallel_ODEsolve_and_post_process_jobs_with_different_systems
+
+    This can't be implemented because dynamiqs will run every hamiltonian with every initial states. 
+    Which means for different state,     
+    '''
+    pass
 
 
 

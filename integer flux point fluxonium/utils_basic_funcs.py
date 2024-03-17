@@ -104,10 +104,9 @@ def generate_single_mapping(H_with_interaction_no_drive) -> np.ndarray:
 def dressed_to_2_level_dm(dressed_dm: qutip.Qobj, 
                         product_to_dressed: dict, 
                         qbt_position: int,
-                        computational_0: int,
-                        computational_1: int,
+                        filtered_product_to_dressed: dict,
+                        sign_multiplier:dict,
                         products_to_keep=None,
-                        dressed_idxes_with_negative_sign: List[int] = None,
                         ) -> qutip.Qobj:
     """
     Convert a dressed density matrix to a multi-level density matrix for specified computational states,
@@ -128,31 +127,14 @@ def dressed_to_2_level_dm(dressed_dm: qutip.Qobj,
         dressed_dm_data = qutip.ket2dm(dressed_dm_data)
     dressed_dm_data = dressed_dm_data.full()
 
-    # Filter and adjust product_to_dressed
-    filtered_product_to_dressed = {}
-    for product_state, dressed_index in product_to_dressed.items():
-        if product_state[qbt_position] in (computational_0, computational_1):
-            new_product_state = list(product_state)
-            new_product_state[qbt_position] = 0 if product_state[qbt_position] == computational_0 else 1
-            filtered_product_to_dressed[tuple(new_product_state)] = dressed_index
-
-    
-    # Convert dressed_idxes_with_negative_sign to a set for O(1) lookup
-    dressed_idxes_with_negative_sign_set = set(dressed_idxes_with_negative_sign)
-    # Pre-compute the sign multiplier for each dressed index
-    sign_multiplier = {idx: -1 if idx in dressed_idxes_with_negative_sign_set else 1
-                    for idx in filtered_product_to_dressed.values()}
-
-
-
     # Infer subsystem dimensions
     subsystem_dims = [max(indexes) + 1 for indexes in zip(*product_to_dressed.keys())]
     subsystem_dims[qbt_position] = 2
-    rho_product = np.zeros((subsystem_dims*2), dtype=complex)
+    rho_product = np.zeros((subsystem_dims*2), dtype=complex) # Here rho_product is shaped like (dim1,dim2,dim1,dim2)
     for product_state, dressed_index1 in filtered_product_to_dressed.items():
         for product_state2, dressed_index2 in filtered_product_to_dressed.items():
             element = dressed_dm_data[dressed_index1, dressed_index2] * sign_multiplier[dressed_index1] * sign_multiplier[dressed_index2]
-            rho_product[product_state+product_state2] += element
+            rho_product[product_state+product_state2] += element # Using index like (lvl1, lvl2, lvl1, lvl2) to access of of the entries
 
     two_lvl_qbt_dm_size = np.prod(subsystem_dims)
     rho_product = rho_product.reshape((two_lvl_qbt_dm_size,two_lvl_qbt_dm_size))
