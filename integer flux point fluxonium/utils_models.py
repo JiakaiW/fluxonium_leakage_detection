@@ -1,8 +1,9 @@
-
 import concurrent
 from dataclasses import dataclass
 import dynamiqs as dq
+dq.set_precision( 'double')
 from itertools import product
+from loky import get_reusable_executor
 import numpy as np
 import pickle
 import qutip
@@ -29,7 +30,6 @@ class DriveTerm:
     driven_op: qutip.Qobj
     pulse_shape_func: Callable
     pulse_shape_args: Dict
-
 
 class CoupledSystem:
     '''
@@ -88,8 +88,6 @@ class CoupledSystem:
         self.sign_multiplier = {idx: -1 if idx in dressed_idxes_with_negative_sign_set else 1
                         for idx in self.filtered_product_to_dressed.values()}
 
-
-
     def truncate_function(self,qobj):
         return truncate_custom(qobj, self.products_to_keep, self.product_to_dressed)
     
@@ -128,7 +126,7 @@ class CoupledSystem:
             
 
         results = [None] * len(initial_states)
-        with concurrent.futures.ProcessPoolExecutor(max_workers=None) as executor:
+        with get_reusable_executor(max_workers=None, context='loky') as executor:
             futures = {executor.submit(ODEsolve_and_post_process, 
                                         y0=initial_states[i], 
                                         tlist=tlist,    
@@ -137,8 +135,6 @@ class CoupledSystem:
                                         drive_terms=drive_terms,
                                         c_ops=c_ops,
                                         e_ops = e_ops,
-                                    
-                                        method = 'mesolve',
                                         post_processing_funcs=post_processing_funcs,
                                         post_processing_args=post_processing_args,
                                         ): i for i in range(len(initial_states))}
@@ -148,7 +144,6 @@ class CoupledSystem:
                 results[original_index] = future.result()
 
         return results
-    
         
     def run_dq_mesolve_parrallel(self,
                         initial_states: qutip.Qobj, # truncated initial states
@@ -159,71 +154,99 @@ class CoupledSystem:
 
                         post_processing = ['pad_back'],
                         ):
-            '''
-            This function runs dq.mesolve or dq.sesolve using dq's parrellelism,
-            then convert dq.Result into a list of qutip.Result
-            and finally use cpu multiprocessing to do post processing
-            '''
-            if c_ops == [] or c_ops == None:
-                result = dq.sesolve(
-                    H = self.diag_dressed_hamiltonian,
-                    rho0 = initial_states,
-                    tsave = tlist,
-                    exp_ops = e_ops,
+        
+        '''
+        This function runs dq.mesolve or dq.sesolve using dq's parrellelism,
+        then convert dq.Result into a list of qutip.Result
+        and finally use cpu multiprocessing to do post processing steps 
+            like padding truncated hillbert space back to full dimension,
+            or partial trace to get a qubit density matrix
+        
+        '''
+        def _H(t):
+            _H = jnp.array(self.diag_dressed_hamiltonian)
+            for term in drive_terms:
+                _H += jnp.array(term.driven_op)* term.pulse_shape_func(t, term.pulse_shape_args)
+            return _H 
+        
+        H =  dq.timecallable(_H)
+
+        if c_ops == [] or c_ops == None:
+            result = dq.sesolve(
+                H = H,
+                psi0 = initial_states,
+                tsave = tlist,
+                exp_ops = e_ops,
+                solver = dq.solver.Tsit5(
+                        rtol= 1e-06,
+                        atol= 1e-06,
+                        safety_factor= 0.9,
+                        min_factor= 0.2,
+                        max_factor = 5.0,
+                        max_steps = int(1e4*(tlist[-1]-tlist[0])),
                     )
-            else:
-                result = dq.mesolve(
-                    H = self.diag_dressed_hamiltonian,
-                    jump_ops = c_ops,
-                    rho0 = initial_states,
-                    tsave = tlist,
-                    exp_ops = e_ops,
+                )
+            print(result)
+        else:
+            result = dq.mesolve(
+                H = H,
+                jump_ops = c_ops,
+                rho0 = initial_states,
+                tsave = tlist,
+                exp_ops = e_ops,
+                solver = dq.solver.Tsit5(
+                        rtol= 1e-06,
+                        atol= 1e-06,
+                        safety_factor= 0.9,
+                        min_factor= 0.2,
+                        max_factor = 5.0,
+                        max_steps = int(1e4*(tlist[-1]-tlist[0])),
                     )
-            
-            
-            # Convert dq.Result to a list of qutip.Result
-            results = [qutip.Result(solver = 'dynamiqs',
-                                    times = tlist,
-                                    expect = result.expects[i],
-                                    states = result.states[i],
-                                    num_expect = len(e_ops),
-                                    num_collapse = len(c_ops)
-                                    )
-                         for i in range(len(initial_states))]
-            
-
-            post_processed_results = [None] * len(results)
-            post_processing_funcs = []
-            post_processing_args = []
-            if 'pad_back' in post_processing:
-                post_processing_funcs.append(pad_back_custom)
-                post_processing_args.append((self.products_to_keep, 
-                                    self.product_to_dressed))
-            if 'partial_trace_computational_states' in post_processing:
-                post_processing_funcs.append(dressed_to_2_level_dm)
-                post_processing_args.append((
-                                            self.product_to_dressed,
-                                            self.qbt_position, 
-                                            self.filtered_product_to_dressed,
-                                            self.sign_multiplier,
-                                            None
-                                            ))                
-
-            with concurrent.futures.ProcessPoolExecutor(max_workers=None) as executor:
-                futures = {executor.submit(post_process, 
-                                            result = results[i],
-                                            post_processing_funcs=post_processing_funcs,
-                                            post_processing_args=post_processing_args,
-                                            ): i for i in range(len(results))}
-                
-                for future in concurrent.futures.as_completed(futures):
-                    original_index = futures[future]
-                    post_processed_results[original_index] = future.result()
-
-            return post_processed_results
+                )
+            print(result)
+        
+        # Convert dq.Result to a list of qutip.solver.Result
+        results = []
+        for i in range(len(initial_states)):
+            qt_result = qutip.solver.Result()
+            qt_result.solver = 'dynamiqs'
+            qt_result.times = tlist
+            qt_result.expect = result.expects[i]
+            qt_result.states = dq.to_qutip(result.states[i])
+            qt_result.num_expect = len(e_ops) if isinstance(e_ops, list) else 0
+            qt_result.num_collapse = len(c_ops) if isinstance(c_ops, list) else 0
+            results.append(qt_result)
         
 
+        post_processed_results = [None] * len(results)
+        post_processing_funcs = []
+        post_processing_args = []
+        if 'pad_back' in post_processing:
+            post_processing_funcs.append(pad_back_custom)
+            post_processing_args.append((self.products_to_keep, 
+                                self.product_to_dressed))
+        if 'partial_trace_computational_states' in post_processing:
+            post_processing_funcs.append(dressed_to_2_level_dm)
+            post_processing_args.append((
+                                        self.product_to_dressed,
+                                        self.qbt_position, 
+                                        self.filtered_product_to_dressed,
+                                        self.sign_multiplier,
+                                        None
+                                        ))                
 
+        with get_reusable_executor(max_workers=None, context='loky') as executor:
+            futures = {executor.submit(post_process, 
+                                        result = results[i],
+                                        post_processing_funcs=post_processing_funcs,
+                                        post_processing_args=post_processing_args,
+                                        ): i for i in range(len(results))}
+            
+            for future in concurrent.futures.as_completed(futures):
+                original_index = futures[future]
+                post_processed_results[original_index] = future.result()
+
+        return post_processed_results
 
 class FluxoniumTunableTransmonSystem(CoupledSystem):
     '''
@@ -254,10 +277,6 @@ class FluxoniumTunableTransmonSystem(CoupledSystem):
                          products_to_keep = products_to_keep,
                          qbt_position = 0,
                         computaional_states = [int(computaional_states[0]),int(computaional_states[-1])])
-
-
-
-
 
 class FluxoniumOscillatorSystem(CoupledSystem):
     '''
@@ -315,7 +334,7 @@ class FluxoniumOscillatorSystem(CoupledSystem):
 
         self.a = qutip.Qobj(self.hilbertspace.op_in_dressed_eigenbasis(self.osc.annihilation_operator)[:, :])
         self.a_trunc = self.truncate_function(self.a)
-        self.driven_operator =   -1j*(self.a_trunc - self.a_trunc.dag() ) # TODO:
+        self.driven_operator =  self.a_trunc + self.a_trunc.dag() 
         self.c_ops = [np.sqrt(kappa) * self.a_trunc] 
 
         if w_d!= None:
@@ -328,9 +347,7 @@ class FluxoniumOscillatorSystem(CoupledSystem):
             self.w_d = transition_frequency(self.hilbertspace,self.product_to_dressed[(2,0)],self.product_to_dressed[(2,1)] ) 
         else:
             raise Exception('computaional_states not supported')
-        
-        
-        
+                
 class FluxoniumOscillatorFilterSystem(CoupledSystem):
     '''
     To model leakage detection of 12 fluxonium with purcell filter
@@ -389,12 +406,8 @@ class FluxoniumOscillatorFilterSystem(CoupledSystem):
         if w_d!= None:
             self.w_d = w_d
 
-     
-
-
-
 def post_process(
-            result:qutip.Result,
+            result:qutip.solver.Result,
             post_processing_funcs:List=[],
             post_processing_args:List=[],
             ):
@@ -425,7 +438,7 @@ def ODEsolve_and_post_process(
             post_processing_args:List=[],
             ):
     '''
-    This method is now more modular:
+    This method is only used for qutip's cpu solvers. For dynamiqs solver call CoupledSystem.run_dq_mesolve_parrallel
 
     It should take in:
         a static hamiltonian, 
@@ -477,11 +490,6 @@ def ODEsolve_and_post_process(
                                 post_processing_args)
     return result
 
-
-
-
-
-
 def run_parallel_ODEsolve_and_post_process_jobs_with_different_systems(
         list_of_systems: List[CoupledSystem],
         list_of_kwargs: list[Any],
@@ -505,7 +513,7 @@ def run_parallel_ODEsolve_and_post_process_jobs_with_different_systems(
     assert len(list_of_systems) == len(list_of_kwargs)
     
     results = [None] * len(list_of_systems)
-    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+    with get_reusable_executor(max_workers=max_workers, context='loky') as executor:
         futures = {}
         for i in range(len(list_of_systems)):
 
@@ -544,11 +552,7 @@ def run_parallel_ODEsolve_and_post_process_jobs_with_different_systems(
             results[original_index] = future.result()
     return results
 
-
-
-
-
-def run_dq_ODEsolve_and_post_process_jobs_with_different_systems(
+def run_dq_ODEsolve_and_post_process_jobs_with_different_systems_but_same_y0(
         list_of_systems: List[CoupledSystem],
         list_of_kwargs: list[Any],
         max_workers = None,
@@ -556,17 +560,14 @@ def run_dq_ODEsolve_and_post_process_jobs_with_different_systems(
         post_processing = ['pad_back'],
     ):
     '''
-    # This function runs dynamiqs's mesolve or sesolve using the concurrency of dynamiqs, 
-    #     and then use cpu parrallization to do post processing.
-    # Function signature is intentionally kept the same as run_parallel_ODEsolve_and_post_process_jobs_with_different_systems
+    This function runs dynamiqs's mesolve or sesolve using the concurrency of dynamiqs, 
+       and then use cpu parrallization to do post processing.
+    Function signature is intentionally kept the same as run_parallel_ODEsolve_and_post_process_jobs_with_different_systems
 
-    This can't be implemented because dynamiqs will run every hamiltonian with every initial states. 
-    Which means for different state,     
+    Because we utilize dynamiqs' concurrency, we will run every hamiltonian with every initial states when calling dq.sesolve. 
+    And most importantly we will apply the jump_ops to every simulation! We don't have the same jump_ops with different systems.
     '''
     pass
-
-
-
 
 ############################################################################
 #
@@ -576,8 +577,9 @@ def run_dq_ODEsolve_and_post_process_jobs_with_different_systems(
 #
 ############################################################################
 
+def square_pulse_with_rise_fall(t,
+                                args = {}):
     
-def square_pulse_with_rise_fall(t, args):
     w_d = args['w_d']
     amp = args['amp']
     t_start = args.get('t_start', 0)  # Default start time is 0
@@ -585,20 +587,17 @@ def square_pulse_with_rise_fall(t, args):
     t_square = args.get('t_square', 0)  # Duration of constant amplitude
 
     def cos_modulation():
-        return 2 * np.pi * amp * np.cos(w_d * 2 * np.pi * t)
+        return 2 * jnp.pi * amp * jnp.cos(w_d * 2 * jnp.pi * t)
     
     t_fall_start = t_start + t_rise + t_square  # Start of fall
     t_end = t_fall_start + t_rise  # End of the pulse
 
-    if t < t_start:  # Before pulse start
-        return 0
-    elif   t_rise > 0  and t_start <= t <= t_start + t_rise:  # Rise segment
-        return np.sin(np.pi * (t - t_start) / (2 * t_rise))**2 * cos_modulation()
-    elif t_start + t_rise < t <= t_fall_start:  # Constant amplitude segment
-        return cos_modulation()
-    elif  t_rise > 0  and  t_fall_start < t <= t_end:  # Fall segment
-        return np.sin(np.pi * (t_end - t) / (2 * t_rise))**2 * cos_modulation()
-    else:  # After pulse end
-        return 0
+    before_pulse_start = jnp.less(t, t_start)
+    during_rise_segment = jnp.logical_and(jnp.greater(t_rise, 0), jnp.logical_and(jnp.greater_equal(t, t_start), jnp.less_equal(t, t_start + t_rise)))
+    constant_amplitude_segment = jnp.logical_and(jnp.greater(t, t_start + t_rise), jnp.less_equal(t, t_fall_start))
+    during_fall_segment = jnp.logical_and(jnp.greater(t_rise, 0), jnp.logical_and(jnp.greater(t, t_fall_start), jnp.less_equal(t, t_end)))
 
-    
+    return jnp.where(before_pulse_start, 0,
+                    jnp.where(during_rise_segment, jnp.sin(jnp.pi * (t - t_start) / (2 * t_rise)) ** 2 * cos_modulation(),
+                            jnp.where(constant_amplitude_segment, cos_modulation(),
+                                        jnp.where(during_fall_segment, jnp.sin(jnp.pi * (t_end - t) / (2 * t_rise)) ** 2 * cos_modulation(), 0))))
