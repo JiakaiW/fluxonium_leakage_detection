@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import dynamiqs as dq
 dq.set_precision( 'double')
 from itertools import product
+import jax.numpy as jnp
 from loky import get_reusable_executor
 import numpy as np
 import pickle
