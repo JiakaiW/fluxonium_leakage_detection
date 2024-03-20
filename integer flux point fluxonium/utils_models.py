@@ -1,7 +1,7 @@
 import concurrent
 from dataclasses import dataclass
 import dynamiqs as dq
-dq.set_precision( 'double')
+# dq.set_precision( 'double')
 from itertools import product
 import jax.numpy as jnp
 from loky import get_reusable_executor
