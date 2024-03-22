@@ -1,7 +1,8 @@
 import concurrent
 from dataclasses import dataclass
 import dynamiqs as dq
-# dq.set_precision( 'double')
+from dynamiqs import timecallable
+dq.set_precision( 'double')
 from itertools import product
 import jax.numpy as jnp
 from loky import get_reusable_executor
@@ -170,7 +171,7 @@ class CoupledSystem:
                 _H += jnp.array(term.driven_op)* term.pulse_shape_func(t, term.pulse_shape_args)
             return _H 
         
-        H =  dq.timecallable(_H)
+        H =  timecallable(_H)
 
         if c_ops == [] or c_ops == None:
             result = dq.sesolve(
@@ -602,3 +603,24 @@ def square_pulse_with_rise_fall(t,
                     jnp.where(during_rise_segment, jnp.sin(jnp.pi * (t - t_start) / (2 * t_rise)) ** 2 * cos_modulation(),
                             jnp.where(constant_amplitude_segment, cos_modulation(),
                                         jnp.where(during_fall_segment, jnp.sin(jnp.pi * (t_end - t) / (2 * t_rise)) ** 2 * cos_modulation(), 0))))
+
+def gaussian_pulse(t, args={}):
+    # Area under envolope is amp * sigma * sqrt(2pi)
+    w_d = args['w_d']
+    amp = args['amp']
+    t_start = args.get('t_start', 0)
+    t_duration = args.get('t_duration', 0)
+    sigma = args.get('sigma', 1)
+    
+    def cos_modulation(t_point):
+        return 2 * jnp.pi * amp * jnp.cos(w_d * 2 * jnp.pi * t_point)
+    
+    t_end = t_start + t_duration
+
+    def gaussian_envelope(t_point):
+        return jnp.exp(-0.5 * ((t_point - (t_start + t_duration / 2)) ** 2) / sigma ** 2)
+    
+    pulse = jnp.where(jnp.logical_and(t >= t_start, t < t_end),
+                     gaussian_envelope(t) * cos_modulation(t), 0)
+    
+    return pulse
