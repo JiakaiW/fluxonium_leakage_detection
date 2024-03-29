@@ -116,7 +116,8 @@ def dressed_to_2_level_dm(dressed_dm: qutip.Qobj,
     - dressed_dm: The dressed density matrix as a qutip.Qobj.
     - product_to_dressed: Mapping from product states to dressed states indices.
     - qbt_position: which of the subsystem is the qubit
-    - computational_0, computational_1: indicate which two levels of the qubit are the computational states.
+    - filtered_product_to_dressed:levels relevent to the qubit computational states
+    - sign_multiplier: 
     - products_to_keep: Optional list of product states to keep.
 
     Returns:

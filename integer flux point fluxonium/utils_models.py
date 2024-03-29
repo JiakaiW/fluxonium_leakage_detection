@@ -83,6 +83,7 @@ class CoupledSystem:
                 pass
             elif max_abs_value < 0:
                 dressed_idxes_with_negative_sign.append(i)
+                
         # Convert dressed_idxes_with_negative_sign to a set for O(1) lookup
         dressed_idxes_with_negative_sign_set = set(dressed_idxes_with_negative_sign)
         
@@ -250,6 +251,9 @@ class CoupledSystem:
 
         return post_processed_results
 
+
+
+
 class FluxoniumTunableTransmonSystem(CoupledSystem):
     '''
     To model leakage detection of 12 fluxonium
@@ -274,6 +278,37 @@ class FluxoniumTunableTransmonSystem(CoupledSystem):
         self.tune_tmon = tune_tmon
         hilbertspace = scqubits.HilbertSpace([self.fluxonium, self.tune_tmon])
         hilbertspace.add_interaction(g_strength=g_strength,op1=self.fluxonium.n_operator, op2=self.tune_tmon.n_operator,add_hc=False)
+        
+        super().__init__(hilbertspace = hilbertspace,
+                         products_to_keep = products_to_keep,
+                         qbt_position = 0,
+                        computaional_states = [int(computaional_states[0]),int(computaional_states[-1])])
+
+
+class FluxoniumTransmonSystem(CoupledSystem):
+    '''
+    To model leakage detection of 12 fluxonium
+    '''
+    def __init__(self,
+                fluxonium: scqubits.Fluxonium,
+                transmon: scqubits.Transmon,
+
+
+                computaional_states:str, # = '0,1' or '1,2'
+                
+                g_strength:float = 0.18,
+
+                products_to_keep: List[List[int]]= None,
+                w_d:float = None
+                ):
+        '''
+        Initialize objects before truncation
+        '''
+        
+        self.fluxonium = fluxonium
+        self.transmon = transmon
+        hilbertspace = scqubits.HilbertSpace([self.fluxonium, self.transmon])
+        hilbertspace.add_interaction(g_strength=g_strength,op1=self.fluxonium.n_operator, op2=self.transmon.n_operator,add_hc=False)
         
         super().__init__(hilbertspace = hilbertspace,
                          products_to_keep = products_to_keep,
@@ -606,6 +641,9 @@ def square_pulse_with_rise_fall(t,
 
 def gaussian_pulse(t, args={}):
     # Area under envolope is amp * sigma * sqrt(2pi)
+    # sigma = amp_with_2pi * pulse_length  /(   np.sqrt(2*np.pi)  *  amp_with_2pi )
+    # t_tot = 8* sigma
+    # sigma, t_tot
     w_d = args['w_d']
     amp = args['amp']
     t_start = args.get('t_start', 0)
