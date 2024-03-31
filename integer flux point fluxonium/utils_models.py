@@ -343,22 +343,11 @@ class FluxoniumOscillatorSystem(CoupledSystem):
         '''
         
         self.qbt = scqubits.Fluxonium(EJ=EJ,EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
-        self.osc = scqubits.Oscillator(E_osc=Er,truncated_dim=osc_level,l_osc=1.0)
+        self.osc = scqubits.Oscillator(E_osc=Er,truncated_dim=osc_level,l_osc=1.0) # l_osc should have been 1/sqrt(2), otherwise I'm effectively reducing the coupling strength by sqrt(2) 
+            # https://scqubits.readthedocs.io/en/latest/api-doc/_autosummary/scqubits.core.oscillator.Oscillator.html#scqubits.core.oscillator.Oscillator.n_operator
         hilbertspace = scqubits.HilbertSpace([self.qbt, self.osc])
         
-        # hilbertspace.add_interaction(g_strength=g_strength,op1=self.qbt.n_operator, op2=self.osc.annihilation_operator,add_hc=True) 
-        '''
-        This interaction produces the same dispersive shift as the n_operator, 
-         but it tends to mess up the phases of the qubit coupled to different levels of resonator
-         it also shortens the amount of time the photon population returns to zeroby half
-        '''
-
         hilbertspace.add_interaction(g_strength=g_strength,op1=self.qbt.n_operator, op2=self.osc.n_operator,add_hc=False) # Edited
-        '''
-        This interaction produces the same dispersive shift as the first one, 
-         and the phases of the qubit coupled to different levels of resonator is always about the same or
-         different by pi. (whether drive by a+a.dag or n operator has nothing to do with messing up phase)
-        '''
 
         # if products_to_keep is None:
         #     products_to_keep = [[ql, ol] for ql in [1,2,3] for ol in range(10) ] \
