@@ -252,8 +252,6 @@ class CoupledSystem:
         return post_processed_results
 
 
-
-
 class FluxoniumTunableTransmonSystem(CoupledSystem):
     '''
     To model leakage detection of 12 fluxonium
@@ -595,6 +593,46 @@ def run_dq_ODEsolve_and_post_process_jobs_with_different_systems_but_same_y0(
     '''
     pass
 
+
+
+from flax import struct
+
+@struct.dataclass
+class MyTransmon(qs.SingleChargeTransmon):
+    '''
+    The SingleChargeTransmon or Transmon in qcsys doesn't use the same hamiltonian as scqubit's
+    I define this Transmon to keep it consistent with scqubit
+    '''
+    N_max_charge: int = struct.field(pytree_node=False)
+
+    @classmethod
+    def create(cls, N, N_max_charge, params, label=0, use_linear=False):
+        return cls(N, N_max_charge, params, label, use_linear, N_max_charge)
+    
+    def get_H_full(self):
+        #  consistant with scqubits 
+        dimension = 2 * self.N_max_charge + 1
+        def generate_hamiltonian_element(ind, Ec, N_max_charge, ng):
+            return 4.0 * Ec * (ind - N_max_charge - ng) ** 2
+
+        dim_range = jnp.arange(dimension)
+        hamiltonian_mat = jnp.diag(vmap(generate_hamiltonian_element, in_axes=(0, None, None, None))(dim_range, self.params["Ec"], self.N_max_charge, self.params["ng"]))
+        ind = jnp.arange(dimension - 1)
+        hamiltonian_mat = hamiltonian_mat.at[ind, ind + 1].set(-self.params["Ej"] / 2.0)
+        hamiltonian_mat = hamiltonian_mat.at[ind + 1, ind].set(-self.params["Ej"] / 2.0)
+        hamiltonian_mat = jnp.array(hamiltonian_mat, dtype=jnp.complex128)
+        H  = jqt.Qarray.create(hamiltonian_mat)
+        # print(H.data)
+        return  H
+    def build_n_op(self):
+        return jqt.Qarray.create(jnp.diag(jnp.arange(-self.N_max_charge, self.N_max_charge + 1)))
+    @jit
+    def get_op_in_H_eigenbasis(self, op):
+        if type(op) == jqt.Qarray:
+            op = op.data
+        evecs = self.eig_systems["vecs"][:, : self.N]
+        op = jnp.dot(jnp.conjugate(evecs.transpose()), jnp.dot(op, evecs))
+        return jqt.Qarray.create(op)
 ############################################################################
 #
 #
@@ -651,3 +689,33 @@ def gaussian_pulse(t, args={}):
                      gaussian_envelope(t) * cos_modulation(t), 0)
     
     return pulse
+
+def modified_drag_pulse(t, args):
+    """
+    Generate a modified DRAG pulse envelope using jax.numpy.
+
+    Args:
+        t (float): Time.
+        args (dict): Dictionary containing pulse parameters.
+            - 'duration': Pulse length.
+            - 'sigma': Standard deviation of the Gaussian peak.
+            - 'beta': Correction amplitude.
+            - 'amp': Amplitude of the Gaussian envelope.
+
+    Returns:
+        complex: Modified DRAG pulse envelope at time t.
+    """
+    duration = args['duration']
+    sigma = args['sigma']
+    beta = args['beta']
+    amp = args['amp']
+    w_d = args['w_d']
+
+    def cos_modulation(t_point):
+        return 2 * jnp.pi * amp * jnp.cos(w_d * 2 * jnp.pi * t_point)
+    
+    a = jnp.exp(-0.5 * ((0 - duration / 2) / sigma) ** 2)
+    gaussian = jnp.exp(-0.5 * ((t - duration / 2) / sigma) ** 2 - a) / (1 - a)
+    derivative = 1j * beta * (-1 / sigma ** 2) * (t - duration / 2) * gaussian
+    modified_pulse = amp * (gaussian + derivative) *  cos_modulation(t)
+    return modified_pulse
