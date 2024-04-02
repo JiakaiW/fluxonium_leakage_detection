@@ -705,17 +705,18 @@ def modified_drag_pulse(t, args):
     Returns:
         complex: Modified DRAG pulse envelope at time t.
     """
+    w_d = args['w_d']
+    amp = args['amp']
     duration = args['duration']
     sigma = args['sigma']
     beta = args['beta']
-    amp = args['amp']
-    w_d = args['w_d']
+    
+    
 
-    def cos_modulation(t_point):
-        return 2 * jnp.pi * amp * jnp.cos(w_d * 2 * jnp.pi * t_point)
+    cos_modulation =  2 * jnp.pi * amp * jnp.cos(w_d * 2 * jnp.pi * t)
     
     a = jnp.exp(-0.5 * ((0 - duration / 2) / sigma) ** 2)
-    gaussian = jnp.exp(-0.5 * ((t - duration / 2) / sigma) ** 2 - a) / (1 - a)
+    gaussian = (jnp.exp(-0.5 * ((t - duration / 2) / sigma) ** 2) - a) / (1 - a)
     derivative = 1j * beta * (-1 / sigma ** 2) * (t - duration / 2) * gaussian
-    modified_pulse = amp * (gaussian + derivative) *  cos_modulation(t)
+    modified_pulse =  (gaussian + derivative) *  cos_modulation
     return modified_pulse
