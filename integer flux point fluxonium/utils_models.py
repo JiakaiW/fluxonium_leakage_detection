@@ -2,7 +2,7 @@ import concurrent
 from dataclasses import dataclass
 import dynamiqs as dq
 from dynamiqs import timecallable
-dq.set_precision( 'double')
+# dq.set_precision( 'double')
 from itertools import product
 import jax.numpy as jnp
 from loky import get_reusable_executor
@@ -358,7 +358,7 @@ class FluxoniumOscillatorSystem(CoupledSystem):
 
         self.a = qutip.Qobj(self.hilbertspace.op_in_dressed_eigenbasis(self.osc.annihilation_operator)[:, :])
         self.a_trunc = self.truncate_function(self.a)
-        self.driven_operator =  self.a_trunc + self.a_trunc.dag() 
+        self.driven_operator =   self.truncate_function(self.hilbertspace.op_in_dressed_eigenbasis(self.osc.n_operator))#self.a_trunc + self.a_trunc.dag() 
         self.c_ops = [np.sqrt(kappa) * self.a_trunc] 
 
         if w_d!= None:
@@ -633,6 +633,37 @@ class MyTransmon(qs.SingleChargeTransmon):
         evecs = self.eig_systems["vecs"][:, : self.N]
         op = jnp.dot(jnp.conjugate(evecs.transpose()), jnp.dot(op, evecs))
         return jqt.Qarray.create(op)
+    
+
+
+@struct.dataclass
+class MyResonator(qs.Device):
+    @classmethod
+    def create(cls, N, params, label=0, use_linear=False):
+        return cls(N, N, params, label, use_linear)
+
+    def common_ops(self):
+        ops = {}
+
+        N = self.N
+        ops["id"] = jqt.identity(N)
+        ops["a"] = jqt.destroy(N)
+        ops["a_dag"] = jqt.create(N)
+        ops["phi"] = (ops["a"] + ops["a_dag"]) / jnp.sqrt(2)
+        ops["n"] = 1j * (ops["a_dag"] - ops["a"]) / jnp.sqrt(2)
+        return ops
+
+    def get_linear_ω(self):
+        """Get frequency of linear terms."""
+        return self.params["ω"]
+
+    def get_H_linear(self):
+        """Return linear terms in H."""
+        w = self.get_linear_ω()
+        return w * self.linear_ops["a_dag"] @ self.linear_ops["a"]
+
+    def get_H_full(self):
+        return self.get_H_linear()
 ############################################################################
 #
 #
