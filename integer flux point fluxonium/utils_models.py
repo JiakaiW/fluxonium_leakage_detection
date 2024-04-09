@@ -347,10 +347,6 @@ class FluxoniumOscillatorSystem(CoupledSystem):
         
         hilbertspace.add_interaction(g_strength=g_strength,op1=self.qbt.n_operator, op2=self.osc.n_operator,add_hc=False) # Edited
 
-        # if products_to_keep is None:
-        #     products_to_keep = [[ql, ol] for ql in [1,2,3] for ol in range(10) ] \
-        #                         + [[ql, ol] for ql in [0] for ol in range(30) ]
-
         super().__init__(hilbertspace = hilbertspace,
                          products_to_keep = products_to_keep,
                          qbt_position = 0,
@@ -358,7 +354,7 @@ class FluxoniumOscillatorSystem(CoupledSystem):
 
         self.a = qutip.Qobj(self.hilbertspace.op_in_dressed_eigenbasis(self.osc.annihilation_operator)[:, :])
         self.a_trunc = self.truncate_function(self.a)
-        self.driven_operator =   self.truncate_function(self.hilbertspace.op_in_dressed_eigenbasis(self.osc.n_operator))#self.a_trunc + self.a_trunc.dag() 
+        self.driven_operator = self.a_trunc + self.a_trunc.dag() #   self.truncate_function(self.hilbertspace.op_in_dressed_eigenbasis(self.osc.n_operator)) 
         self.c_ops = [np.sqrt(kappa) * self.a_trunc] 
 
         if w_d!= None:
