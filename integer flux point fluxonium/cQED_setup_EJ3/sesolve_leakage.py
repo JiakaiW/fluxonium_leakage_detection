@@ -13,10 +13,14 @@ if __name__ == '__main__':
     EJ = 3
     EC = EJ/4
     EL = EJ/21
-    
     Er = 8.32993958
-    g = 0.25
 
+    g = 0.3
+
+    w_d = 8.329996129604254
+    amp = 0.002
+
+    tot_time =1200
 
     system_leak =  FluxoniumOscillatorSystem(
                     EJ = EJ,
@@ -44,7 +48,7 @@ if __name__ == '__main__':
     list_of_systems = [system_leak, system_compu, system_compu]
 
 
-    tot_time =800
+   
     tlist = np.linspace(0, tot_time, tot_time)
 
 
@@ -61,8 +65,8 @@ if __name__ == '__main__':
                                     driven_op= system.driven_operator,
                                     pulse_shape_func=square_pulse_with_rise_fall,
                                     pulse_shape_args={
-                                        'w_d': 8.330000150147974,
-                                        'amp': 0.003,
+                                        'w_d': w_d ,
+                                        'amp': amp,
                                         't_rise': 20,
                                         't_square': tot_time
                                     })],
