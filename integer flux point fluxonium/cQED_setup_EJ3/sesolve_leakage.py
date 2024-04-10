@@ -1,6 +1,5 @@
 
 import sys
-original_sys_path = sys.path.copy()
 sys.path.append('../')
 from utils_models import *
 

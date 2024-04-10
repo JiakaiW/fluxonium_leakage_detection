@@ -6,6 +6,8 @@ from dynamiqs import timecallable
 # dq.set_precision( 'double')
 import qcsys as qs
 import jaxquantum as jqt
+import jax
+import math
 from jax import jit, vmap
 @struct.dataclass
 class MyTransmon(qs.SingleChargeTransmon):
@@ -72,6 +74,49 @@ class MyResonator(qs.Device):
 
     def get_H_full(self):
         return self.get_H_linear()
+
+
+
+############################################################################
+#
+#
+# Functions about manipulating dynamiqs / jaxquantum / jax.numpy objects
+#
+#
+############################################################################
+
+# These are helper functions
+def calculate_eig(Ns, H: jqt.Qarray):
+    N_tot = math.prod(Ns)
+    vals, kets = jnp.linalg.eigh(H.data)
+
+    ketsT = kets.T
+
+    def get_product_idx(edx):
+        argmax = jnp.argmax(jnp.abs(ketsT[edx]))
+        return  argmax  # product index
+    edxs = jnp.arange(N_tot)
+    product_indices_sorted_by_eval = vmap(get_product_idx)(edxs)
+    return (vals,kets,product_indices_sorted_by_eval) # Here kets is equivalent to the S in qutip.Qobj.transform
+
+def find_closest_dressed_index(product_index, product_indices_sorted_by_eval):
+    dressed_index = jnp.argmin(jnp.abs(product_index - product_indices_sorted_by_eval))
+    return dressed_index.item()
+
+def transform_op_into_dressed_basis_jax(op_matrix: jqt.Qarray, 
+                                        S: jax.Array) -> jax.Array:
+    """
+    Transform an operator into the dressed basis using JAX.
+
+    Parameters:
+    - op_matrix: A 2D JAX array representing the operator's matrix.
+    - S: A 2D JAX array representing the dressed eigenvectors similar to the S in qutip.Qobj.transform
+
+    Returns:
+    - A 2D JAX array representing the transformed operator.
+    """
+    data = jnp.dot(S, jnp.dot(op_matrix.data, S.T.conj()))
+    return data
 
 
 
