@@ -84,3 +84,6 @@ integer flux point fluxonium/pickles/transmon_response.pkl
 integer flux point fluxonium/pickles/transmon_response_big_amp.pkl
 integer flux point fluxonium/pickles/try_new_params_compu.pkl
 integer flux point fluxonium/pickles/try_new_params_leak.pkl
+integer flux point fluxonium/pickles/EJ3_leak_.pkl
+integer flux point fluxonium/pickles/EJ3_leak_amp1.5em3.pkl
+integer flux point fluxonium/pickles/EJ3_leak_amp3em3.pkl

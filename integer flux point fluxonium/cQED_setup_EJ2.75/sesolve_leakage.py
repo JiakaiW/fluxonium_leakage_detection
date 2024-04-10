@@ -41,7 +41,7 @@ if __name__ == '__main__':
                 'y0':system.truncate_function(y0) ,
                 'tlist':tlist,
                 'drive_terms':[DriveTerm( 
-                                        driven_op= system.truncate_function(system.hilbertspace.op_in_dressed_eigenbasis(system.osc.n_operator)),
+                                        driven_op= system.driven_operator,
                                         # driven_op= -1j*(system.a_trunc - system.a_trunc.dag()) ,
                                         pulse_shape_func=square_pulse_with_rise_fall,
                                         pulse_shape_args={
@@ -63,5 +63,5 @@ if __name__ == '__main__':
 
 
     import pickle
-    with open('../pickles/try_new_params_leak.pkl', 'wb') as file:
+    with open('../pickles/try_new_params_leak_.pkl', 'wb') as file:
         pickle.dump(results, file)

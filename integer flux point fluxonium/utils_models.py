@@ -89,7 +89,7 @@ class CoupledSystem:
         
         # Pre-compute the sign multiplier for each dressed index
         self.sign_multiplier = {idx: -1 if idx in dressed_idxes_with_negative_sign_set else 1
-                        for idx in self.filtered_product_to_dressed.values()}
+                        for idx in self.product_to_dressed.values()}
 
     def truncate_function(self,qobj):
         return truncate_custom(qobj, self.products_to_keep, self.product_to_dressed)

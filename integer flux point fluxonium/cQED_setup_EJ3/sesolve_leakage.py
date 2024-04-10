@@ -10,35 +10,51 @@ if __name__ == '__main__':
     freeze_support()
 
     max_ql = 30
-    max_ol = 40
+    max_ol = 70
     EJ = 3
     EC = EJ/4
-    EL = EJ/20
-    system_computational = FluxoniumOscillatorSystem(
-        EJ = EJ,
-        EC = EC,
-        EL = EL,
-        Er = 8.59995117,
-        g_strength = 0.16,
-        qubit_level = max_ql,
-        osc_level = max_ol,
-        products_to_keep=[[ql, ol] for ql in [0] for ol in range(max_ol) ],
-        computaional_states = '1,2',
-        )
-    tot_time =100
+    EL = EJ/21
+    
+    Er = 8.32993958
+    g = 0.25
+
+
+    system_leak =  FluxoniumOscillatorSystem(
+                    EJ = EJ,
+                    EC = EC,
+                    EL = EL,
+                    Er = Er,
+                    g_strength = g,
+                    qubit_level = max_ql,
+                    osc_level = max_ol,
+                    products_to_keep=[[ql, ol] for ql in [0] for ol in range(max_ol) ],
+                    computaional_states = '1,2',
+                    )
+    system_compu =  FluxoniumOscillatorSystem(
+                    EJ = EJ,
+                    EC = EC,
+                    EL = EL,
+                    Er = Er,
+                    g_strength = g,
+                    qubit_level = max_ql,
+                    osc_level = max_ol,
+                    products_to_keep=[[ql, ol] for ql in [1,2] for ol in range(max_ol) ],
+                    computaional_states = '1,2',
+                    )
+    
+    list_of_systems = [system_leak, system_compu, system_compu]
+
+
+    tot_time =800
     tlist = np.linspace(0, tot_time, tot_time)
 
 
     initial_states  = [
-        qutip.basis(system_computational.hilbertspace.dimension, system_computational.product_to_dressed[(0,0)])
+        qutip.basis(max_ql * max_ol, list_of_systems[0].product_to_dressed[(ql,0)]) for ql in [0,1,2]
         ]
 
-    list_of_systems = []
     list_of_kwargs = []
-    system = system_computational
-    # for kappa in [1e-3]:
-    for y0 in initial_states:
-        list_of_systems.append(system)
+    for system, y0 in zip(list_of_systems,initial_states):
         list_of_kwargs.append( {
             'y0':system.truncate_function(y0) ,
             'tlist':tlist,
@@ -46,7 +62,7 @@ if __name__ == '__main__':
                                     driven_op= system.driven_operator,
                                     pulse_shape_func=square_pulse_with_rise_fall,
                                     pulse_shape_args={
-                                        'w_d': 8.60187520570007,
+                                        'w_d': 8.330000150147974,
                                         'amp': 0.003,
                                         't_rise': 20,
                                         't_square': tot_time
