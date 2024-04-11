@@ -9,18 +9,17 @@ if __name__ == '__main__':
     freeze_support()
 
     max_ql = 30
-    max_ol = 70
+    max_ol = 80
     EJ = 3
     EC = EJ/4
     EL = EJ/21
     Er = 8.32993958
 
-    g = 0.3
-
-    w_d = 8.329996129604254
+    g = 0.25
+    w_d = 8.330000924693827
     amp = 0.002
 
-    tot_time =1200
+    tot_time =1000
 
     system_leak =  FluxoniumOscillatorSystem(
                     EJ = EJ,
@@ -33,7 +32,7 @@ if __name__ == '__main__':
                     products_to_keep=[[ql, ol] for ql in [0] for ol in range(max_ol) ],
                     computaional_states = '1,2',
                     )
-    system_compu =  FluxoniumOscillatorSystem(
+    system_one =  FluxoniumOscillatorSystem(
                     EJ = EJ,
                     EC = EC,
                     EL = EL,
@@ -41,11 +40,23 @@ if __name__ == '__main__':
                     g_strength = g,
                     qubit_level = max_ql,
                     osc_level = max_ol,
-                    products_to_keep=[[ql, ol] for ql in [1,2] for ol in range(max_ol) ],
+                    products_to_keep=[[ql, ol] for ql in [1] for ol in range(max_ol) ],
+                    computaional_states = '1,2',
+                    )
+
+    system_two =  FluxoniumOscillatorSystem(
+                    EJ = EJ,
+                    EC = EC,
+                    EL = EL,
+                    Er = Er,
+                    g_strength = g,
+                    qubit_level = max_ql,
+                    osc_level = max_ol,
+                    products_to_keep=[[ql, ol] for ql in [2] for ol in range(max_ol) ],
                     computaional_states = '1,2',
                     )
     
-    list_of_systems = [system_leak, system_compu, system_compu]
+    systems = [system_leak, system_one, system_two]
 
 
    
@@ -53,26 +64,29 @@ if __name__ == '__main__':
 
 
     initial_states  = [
-        qutip.basis(max_ql * max_ol, list_of_systems[0].product_to_dressed[(ql,0)]) for ql in [0,1,2]
+        qutip.basis(max_ql * max_ol, systems[0].product_to_dressed[(ql,0)]) for ql in [0,1,2]
         ]
 
+    list_of_systems = []
     list_of_kwargs = []
-    for system, y0 in zip(list_of_systems,initial_states):
-        list_of_kwargs.append( {
-            'y0':system.truncate_function(y0) ,
-            'tlist':tlist,
-            'drive_terms':[DriveTerm( 
-                                    driven_op= system.driven_operator,
-                                    pulse_shape_func=square_pulse_with_rise_fall,
-                                    pulse_shape_args={
-                                        'w_d': w_d ,
-                                        'amp': amp,
-                                        't_rise': 20,
-                                        't_square': tot_time
-                                    })],
-            'e_ops':[system.a_trunc , system.a_trunc.dag()*system.a_trunc],
-            # 'c_ops':[np.sqrt(kappa) * system.a_trunc]
-            })
+    for kappa in [5e-4,1e-3,2e-3,3e-3]:
+        for system, y0 in zip(systems, initial_states):
+            list_of_systems.append(system)
+            list_of_kwargs.append( {
+                'y0':system.truncate_function(y0) ,
+                'tlist':tlist,
+                'drive_terms':[DriveTerm( 
+                                        driven_op= system.driven_operator,
+                                        pulse_shape_func=square_pulse_with_rise_fall,
+                                        pulse_shape_args={
+                                            'w_d': w_d ,
+                                            'amp': amp,
+                                            't_rise': 20,
+                                            't_square': tot_time
+                                        })],
+                'e_ops':[system.a_trunc , system.a_trunc.dag()*system.a_trunc],
+                'c_ops':[kappa *qutip.lindblad_dissipator(system.a_trunc) ]
+                })
         
 
     results = run_parallel_ODEsolve_and_post_process_jobs_with_different_systems(
