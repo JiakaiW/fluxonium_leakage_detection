@@ -1,5 +1,6 @@
 import concurrent
 from dataclasses import dataclass
+from datetime import datetime
 
 from itertools import product
 
@@ -454,6 +455,8 @@ def ODEsolve_and_post_process(
             method:str = 'qutip.mesolve',
             post_processing_funcs:List=[],
             post_processing_args:List=[],
+
+            file_name: str = None
             ):
     '''
     This method is only used for qutip's cpu solvers. For dynamiqs solver call CoupledSystem.run_dq_mesolve_parrallel
@@ -506,6 +509,11 @@ def ODEsolve_and_post_process(
     result = post_process(result,
                                  post_processing_funcs,
                                 post_processing_args)
+    if file_name!= None:
+        current_datetime = datetime.now()
+        datetime_string = current_datetime.strftime("%Y-%m-%d %H:%M:%S")
+        with open(f'{file_name} {datetime_string}.pkl', 'wb') as file:
+            pickle.dump(result, file)
     return result
 
 def run_parallel_ODEsolve_and_post_process_jobs_with_different_systems(
@@ -562,7 +570,8 @@ def run_parallel_ODEsolve_and_post_process_jobs_with_different_systems(
                 e_ops=list_of_kwargs[i].get('e_ops', None),
                 store_states = store_states,
                 post_processing_funcs=post_processing_funcs,
-                post_processing_args=post_processing_args)
+                post_processing_args=post_processing_args,
+                file_name = f'{i}')
             futures[future] = i
         
         for future in concurrent.futures.as_completed(futures):

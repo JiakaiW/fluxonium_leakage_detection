@@ -69,7 +69,7 @@ if __name__ == '__main__':
 
     list_of_systems = []
     list_of_kwargs = []
-    for kappa in [1e-3]:
+    for kappa in [2e-3]:
         for system, y0 in zip(systems, initial_states):
             list_of_systems.append(system)
             list_of_kwargs.append( {
@@ -97,5 +97,5 @@ if __name__ == '__main__':
 
 
     import pickle
-    with open('../pickles/EJ3_leak.pkl', 'wb') as file:
+    with open('../pickles/EJ3_leak_2em3.pkl', 'wb') as file:
         pickle.dump(results, file)
