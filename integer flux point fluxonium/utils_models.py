@@ -147,16 +147,16 @@ class CoupledSystem:
 
         return results
         
-    # def run_dq_mesolve_parrallel(self,
-    #                     initial_states: qutip.Qobj, # truncated initial states
-    #                     tlist: np.array, 
-    #                     drive_terms: List[DriveTerm],
-    #                     c_ops: Union[None,List[qutip.Qobj]] = None,
-    #                     e_ops:Union[None,List[qutip.Qobj]] = None,
+    def run_dq_mesolve_parrallel(self,
+                        initial_states: qutip.Qobj, # truncated initial states
+                        tlist: np.array, 
+                        drive_terms: List[DriveTerm],
+                        c_ops: Union[None,List[qutip.Qobj]] = None,
+                        e_ops:Union[None,List[qutip.Qobj]] = None,
 
-    #                     post_processing = ['pad_back'],
-    #                     ):
-        
+                        post_processing = ['pad_back'],
+                        ):
+    #######################################################
     #     '''
     #     This function runs dq.mesolve or dq.sesolve using dq's parrellelism,
     #     then convert dq.Result into a list of qutip.Result
@@ -249,7 +249,8 @@ class CoupledSystem:
     #             post_processed_results[original_index] = future.result()
 
     #     return post_processed_results
-
+    #######################################################
+        pass
 
 class FluxoniumTunableTransmonSystem(CoupledSystem):
     '''
