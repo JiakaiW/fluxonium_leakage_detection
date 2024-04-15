@@ -2,7 +2,7 @@
 import sys
 sys.path.append('../')
 from utils_models import *
-
+import pickle
 if __name__ == '__main__':
     # For Windows and MacOS compatibility:
     from multiprocessing import freeze_support
@@ -62,40 +62,26 @@ if __name__ == '__main__':
    
     tlist = np.linspace(0, tot_time, tot_time)
 
-
-    initial_states  = [
-        qutip.basis(max_ql * max_ol, systems[0].product_to_dressed[(ql,0)]) for ql in [0,1,2]
-        ]
-
-    list_of_systems = []
-    list_of_kwargs = []
-    for kappa in [2e-3]:
-        for system, y0 in zip(systems, initial_states):
-            list_of_systems.append(system)
-            list_of_kwargs.append( {
-                'y0':system.truncate_function(y0) ,
-                'tlist':tlist,
-                'drive_terms':[DriveTerm( 
-                                        driven_op= system.driven_operator,
-                                        pulse_shape_func=square_pulse_with_rise_fall,
-                                        pulse_shape_args={
-                                            'w_d': w_d ,
-                                            'amp': amp,
-                                            't_rise': 20,
-                                            't_square': tot_time
-                                        })],
-                'e_ops':[system.a_trunc , system.a_trunc.dag()*system.a_trunc],
-                'c_ops':[kappa *qutip.lindblad_dissipator(system.a_trunc) ]
-                })
-        
-
-    results = run_parallel_ODEsolve_and_post_process_jobs_with_different_systems(
-        list_of_systems,
-        list_of_kwargs,
-        post_processing = ['pad_back']
-    )
-
-
-    import pickle
-    with open('../pickles/EJ3_leak_2em3.pkl', 'wb') as file:
-        pickle.dump(results, file)
+    kappa = 1e-3
+    for ql, system in enumerate(systems):
+        result = ODEsolve_and_post_process(
+            y0=system.truncate_function(qutip.basis(max_ql * max_ol, system.product_to_dressed[(ql,0)])),
+            tlist = tlist,
+            static_hamiltonian=system.diag_dressed_hamiltonian,
+            drive_terms = [DriveTerm( 
+                                driven_op= system.driven_operator,
+                                pulse_shape_func=square_pulse_with_rise_fall,
+                                pulse_shape_args={
+                                    'w_d': w_d ,
+                                    'amp': amp,
+                                    't_rise': 20,
+                                    't_square': tot_time
+                                })],
+            c_ops = [kappa *qutip.lindblad_dissipator(system.a_trunc) ],
+            e_ops = [system.a_trunc , system.a_trunc.dag()*system.a_trunc],
+            method = 'qutip.mcsolve',
+            file_name = 'try_mcsolve'
+        )
+    
+        # with open('../pickles/EJ3_leak_2em3.pkl', 'wb') as file:
+        #     pickle.dump(result, file)
