@@ -500,8 +500,7 @@ def ODEsolve_and_post_process(
                             c_ops=c_ops,
                             e_ops = e_ops,
                             ntraj = 500,
-                            options=qutip.Options(store_states=True,num_cpus = None),
-                            progress_bar = 'enhanced',
+                            options= {'store_states':True,'num_cpus': None,"progress_bar": 'enhanced'},
                             )
     else:
         raise Exception("solver method not supported")
