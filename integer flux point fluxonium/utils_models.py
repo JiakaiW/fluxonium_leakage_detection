@@ -13,7 +13,7 @@ from typing import List, Any, Union, Tuple, Callable, Dict
 from tqdm.notebook import tqdm
 import copy
 # from utils_qiskit import *
-from utils_visualization import *
+# from utils_visualization import *
 from utils_basic_funcs import *
 
 
@@ -75,7 +75,7 @@ class CoupledSystem:
 
         dressed_idxes_with_negative_sign = []
         for i in range(self.hilbertspace.dimension):
-            arr = np.array(evecs[i])
+            arr = evecs[i].full()
             max_abs_index = np.argmax(np.abs(arr))
             max_abs_value = arr[max_abs_index]
             if max_abs_value > 0:
@@ -493,7 +493,7 @@ def ODEsolve_and_post_process(
         )
 
     elif method == 'qutip.mcsolve':
-        result = qutip.mcsolve(psi0=y0, 
+        result = qutip.mcsolve(state=y0, 
                             H= H_with_drives,
                             tlist=tlist,
                             args = additional_args,
@@ -501,7 +501,7 @@ def ODEsolve_and_post_process(
                             e_ops = e_ops,
                             ntraj = 500,
                             options=qutip.Options(store_states=True,num_cpus = None),
-                            progress_bar = qutip.ui.progressbar.EnhancedTextProgressBar(),
+                            progress_bar = 'enhanced',
                             )
     else:
         raise Exception("solver method not supported")

@@ -77,7 +77,8 @@ if __name__ == '__main__':
                                     't_rise': 20,
                                     't_square': tot_time
                                 })],
-            c_ops = [kappa *qutip.lindblad_dissipator(system.a_trunc) ],
+            # c_ops = [kappa *qutip.lindblad_dissipator(system.a_trunc) ],
+            c_ops = [np.sqrt(kappa) * system.a_trunc],
             e_ops = [system.a_trunc , system.a_trunc.dag()*system.a_trunc],
             method = 'qutip.mcsolve',
             file_name = 'try_mcsolve'
