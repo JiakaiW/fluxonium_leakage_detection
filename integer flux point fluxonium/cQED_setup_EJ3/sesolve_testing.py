@@ -12,12 +12,12 @@ if __name__ == '__main__':
     max_ol = 75
     EJ = 3
     EC = EJ/4
-    EL = EJ/21
-    Er = 8.32993958
+    EL = EJ/20.5
+    Er = 8.46111172
 
-    g = 0.27
-    w_d = 8.330000924693827
-    amp = 0.002
+    g = 0.2
+    w_d = 8.460155465243822
+    amp = 0.003
 
     tot_time =1000
  
@@ -29,12 +29,12 @@ if __name__ == '__main__':
                     g_strength = g,
                     qubit_level = max_ql,
                     osc_level = max_ol,
-                    products_to_keep=[[ql, ol] for ql in [1,2] for ol in range(max_ol) ],
+                    products_to_keep=[[ql, ol] for ql in [0,1,2] for ol in range(max_ol) ],
                     computaional_states = '1,2',
                     )
  
     
-    systems = [system, system]
+    systems = [system, system,system]
 
 
    
@@ -42,7 +42,7 @@ if __name__ == '__main__':
 
 
     initial_states  = [
-        qutip.basis(max_ql * max_ol, system.product_to_dressed[(ql,0)]) for ql in [1,2]
+        qutip.basis(max_ql * max_ol, system.product_to_dressed[(ql,0)]) for ql in [0,1,2]
         ]
 
     list_of_systems = []
@@ -63,7 +63,7 @@ if __name__ == '__main__':
                                             't_square': tot_time
                                         })],
                 'e_ops':[system.a_trunc , system.a_trunc.dag()*system.a_trunc],
-                'c_ops':[kappa *qutip.lindblad_dissipator(system.a_trunc) ]
+                # 'c_ops':[kappa *qutip.lindblad_dissipator(system.a_trunc) ]
                 })
         
 
@@ -75,5 +75,5 @@ if __name__ == '__main__':
 
 
     import pickle
-    with open('../pickles/EJ3_compu.pkl', 'wb') as file:
+    with open('../pickles/EJ3_sesolve.pkl', 'wb') as file:
         pickle.dump(results, file)
