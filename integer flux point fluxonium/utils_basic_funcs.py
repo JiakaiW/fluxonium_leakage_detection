@@ -25,13 +25,21 @@ def truncate_custom(qobj: qutip.Qobj, products_to_keep: list, product_to_dressed
     except:
         print(indices_to_keep)
 
-    if qobj.shape[1] == 1:  # is ket
+    if qobj.isket:  # is ket
         truncated_vector = qobj.full()[indices_to_keep, :]
         return qutip.Qobj(truncated_vector)
-    else:  # is operator or density matrix
+    elif qobj.isoper or qobj.isoperket:
         truncated_matrix = qobj.full()[np.ix_(indices_to_keep, indices_to_keep)]
         return qutip.Qobj(truncated_matrix)
-
+    elif qobj.issuper:
+        data = qobj.full()
+        data = data.reshape((qobj.dims[0][0][0],qobj.dims[0][1][0],qobj.dims[0][0][0],qobj.dims[0][1][0]))
+        data = data[np.ix_(indices_to_keep,indices_to_keep,indices_to_keep, indices_to_keep)]
+        data = data.reshape((len(products_to_keep)**2, len(products_to_keep)**2))
+        return qutip.Qobj(data)
+    else:
+        raise ValueError("Unsupported qobj type. Please provide a ket, operator, or superoperator.")
+    
 def pad_back_custom(qobj: qutip.Qobj, products_to_keep: Union[list,None], product_to_dressed: dict) -> qutip.Qobj:
     if products_to_keep == None:
         # for compatibility
