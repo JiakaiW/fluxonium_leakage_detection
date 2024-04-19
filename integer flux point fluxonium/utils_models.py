@@ -493,14 +493,16 @@ def ODEsolve_and_post_process(
         )
 
     elif method == 'qutip.mcsolve':
-        result = qutip.mcsolve(state=y0, 
+        print("called qutip.mcsolve")
+        result = qutip.mcsolve(psi0=y0, 
                             H= H_with_drives,
                             tlist=tlist,
                             args = additional_args,
                             c_ops=c_ops,
                             e_ops = e_ops,
                             ntraj = 500,
-                            options= {'store_states':True,'num_cpus': None,"progress_bar": 'enhanced'},
+                            options=qutip.Options(store_states=True,num_cpus = None),
+                            progress_bar = qutip.ui.progressbar.EnhancedTextProgressBar(),
                             )
     else:
         raise Exception("solver method not supported")
