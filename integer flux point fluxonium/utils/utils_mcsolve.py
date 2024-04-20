@@ -2,7 +2,7 @@ from mcsolve_on_node import *
 import pickle
 import zipfile
 import os
-from IPython.display import clear_output
+from tqdm import tqdm
 
 def pack_mcsolve_chunks(
                     y0: qutip.Qobj,
@@ -11,9 +11,10 @@ def pack_mcsolve_chunks(
                     drive_terms: List[DriveTerm],
                     c_ops: Union[None,List[qutip.Qobj]] = None,
                     e_ops:Union[None,List[qutip.Qobj]] = None,
-                        ntraj = 500,
-                        existing_chunk_num: int = 0,
-                        chunk_size = 4):
+
+                    ntraj = 500,
+                    existing_chunk_num: int = 0,
+                    chunk_size = 4):
 
     seeds = list(np.random.randint(0, 2**32,
                         size=ntraj,
@@ -55,10 +56,7 @@ def merge_results(zip_files):
     averaged_dm_array = None
     tlist = None
 
-    num_files_tot = len(zip_files)
-    num_files_done = 0
-
-    for zip_file in zip_files:
+    for zip_file in tqdm(zip_files,desc='progress'):
         if not os.path.exists(zip_file):
             print(f"File {zip_file} does not exist. Skipping...")
             continue
@@ -74,15 +72,14 @@ def merge_results(zip_files):
 
         # Convert states to density matrices and sum them up
         states_array = np.array([[state.full() for state in traj] for traj in result.states])
+        # The following line averages over n trajectories of kets
+        # n is traj index, t is time index, r is row index, c is column index, i and j are the row and column index of the conjugated ket
         summed_dm_array = np.einsum('ntrc,ntij->tri', states_array, states_array.conj()) 
         if averaged_dm_array is None:
             averaged_dm_array = summed_dm_array
         else:
             averaged_dm_array += summed_dm_array
 
-        num_files_done += 1
-        clear_output()
-        print(f"done:{num_files_done}/{num_files_tot}")
     averaged_dm_array /= num_total_states
     
     # Convert the final averaged density matrices back to Qobj
@@ -92,71 +89,6 @@ def merge_results(zip_files):
     final_result.states = averaged_dms
     final_result.times = tlist
 
+    # TODO: add the average of expectations and the individual expectations
     return final_result
-
-
-def merge_results_and_slice(zip_files):
-    # Used to merge mcsolve results on HTC condor
-    num_total_states = 0
-    averaged_dm_array = None
-    tlist = None
-
-    num_files_tot = len(zip_files)
-    num_files_done = 0
-
-    for zip_file in zip_files:
-        if not os.path.exists(zip_file):
-            print(f"File {zip_file} does not exist. Skipping...")
-            continue
-
-        with gzip.GzipFile(zip_file, "rb") as f:
-            result = pickle.load(f)
-
-        if tlist is None:
-            tlist = result.times[::8]
-
-        num_new_states = len(result.seeds)
-        num_total_states += num_new_states
-
-        # Convert states to density matrices and sum them up
-        states_array = np.array([[state.full() for state in traj] for traj in result.states[::8]])
-        summed_dm_array = np.einsum('ntrc,ntij->tri', states_array, states_array.conj()) 
-        if averaged_dm_array is None:
-            averaged_dm_array = summed_dm_array
-        else:
-            averaged_dm_array += summed_dm_array
-
-        num_files_done += 1
-        clear_output()
-        print(f"done:{num_files_done}/{num_files_tot}")
-    averaged_dm_array /= num_total_states
-    
-    # Convert the final averaged density matrices back to Qobj
-    averaged_dms = [qutip.Qobj(dm) for dm in averaged_dm_array]
-
-    final_result = qutip.solver.Result()
-    final_result.states = averaged_dms
-    final_result.times = tlist
-
-    return final_result
-
-
-def aggregate_results(num_chunks):
-    # Used for time chunks in GPU solver
-    aggregated_states = []
-    aggregated_seeds = []
-
-    for idx in range(num_chunks):
-        with open(f"result_{idx}.pkl", "rb") as f:
-            chunk_result = pickle.load(f)
-        aggregated_states.extend(chunk_result.states)
-        aggregated_seeds.extend(chunk_result.seeds)
-
-    aggregated_result = qutip.solver.Result()
-    aggregated_result.states = aggregated_states
-    aggregated_result.seeds = aggregated_seeds
-
-    return aggregated_result
-
-
 

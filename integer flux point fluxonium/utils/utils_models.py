@@ -9,7 +9,7 @@ import pickle
 import qutip
 import scqubits
 from typing import List, Any, Union, Tuple, Callable, Dict
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 import copy
 # from utils_qiskit import *
 # from utils_visualization import *
