@@ -68,7 +68,7 @@ def generate_single_mapping(H_with_interaction_no_drive,evals = None, evecs = No
     Returns a dictionary like {(0,0,0):0,(0,0,1):1}
     Use this function instead of scqubit's because I can change the overlap threshold here
     """
-    if evals == None or evecs == None:
+    if evals is None or evecs is None:
         evals, evecs = H_with_interaction_no_drive.eigenstates()
     overlap_matrix = scqubits.utils.spectrum_utils.convert_evecs_to_ndarray(evecs)
     OVERLAP_THRESHOLD = 0.1

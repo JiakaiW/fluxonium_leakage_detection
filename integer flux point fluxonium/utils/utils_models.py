@@ -84,9 +84,6 @@ class CoupledSystem:
     def set_new_product_to_keep(self,products_to_keep):
         if products_to_keep == None or products_to_keep == []:
             products_to_keep =list(product(*[range(dim) for dim in self.hilbertspace.subsystem_dims])) 
-        
-        if products_to_keep == self.products_to_keep:
-            pass
 
         self.products_to_keep = products_to_keep
         self.diag_dressed_hamiltonian = self.truncate_function(qutip.Qobj((
@@ -356,11 +353,10 @@ class FluxoniumOscillatorSystem(CoupledSystem):
                         computaional_states = [int(computaional_states[0]),int(computaional_states[-1])])
 
         self.a = qutip.Qobj(self.hilbertspace.op_in_dressed_eigenbasis(self.osc.annihilation_operator)[:, :])
-        self.set_new_product_to_keep(products_to_keep)
         self.kappa = kappa
+        self.set_new_operators_after_setting_new_product_to_keep()
 
-    def set_new_product_to_keep(self,products_to_keep):
-        super().set_new_product_to_keep(products_to_keep) 
+    def set_new_operators_after_setting_new_product_to_keep(self):
         self.a_trunc = self.truncate_function(self.a)
         self.driven_operator = self.a_trunc + self.a_trunc.dag() #self.truncate_function(self.hilbertspace.op_in_dressed_eigenbasis(self.osc.n_operator)) 
         self.set_new_kappa(self.kappa)
