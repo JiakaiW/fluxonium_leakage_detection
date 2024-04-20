@@ -1,30 +1,3 @@
-
-
-existing_chunk_num = 0
-for i in range(4):
-    existing_chunk_num = pack_mcsolve_chunks(H = H_with_drive,
-                    state0 = qutip.basis(hilbertspace.dimension, product_to_dressed[(i,0)]),
-                    tlist = tlist,
-                    c_ops  = [decay_term],
-                    ntraj = 500,
-                    existing_chunk_num = existing_chunk_num,
-                    chunk_size = 4)
-
-def pack_pkl_files_to_zip(zip_filename="mcsolve_input.zip"):
-    # Create a new ZIP file
-    with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        # Loop through all files in the current directory
-        for filename in os.listdir('.'):
-            # Check if the file is a .pkl file with an integer name
-            name, ext = os.path.splitext(filename)
-            if ext == '.pkl' and name.isdigit():
-                # Add the file to the ZIP
-                zipf.write(filename)
-                # Delete the .pkl file
-                os.remove(filename)
-                
-pack_pkl_files_to_zip()
-
 from mcsolve_on_node import *
 import pickle
 import zipfile

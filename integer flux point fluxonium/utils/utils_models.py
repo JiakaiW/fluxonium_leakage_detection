@@ -43,22 +43,14 @@ class CoupledSystem:
         self.computaional_states = computaional_states
         self.hilbertspace = hilbertspace
         self.hilbertspace.generate_lookup()
-        self.product_to_dressed = generate_single_mapping(self.hilbertspace.hamiltonian())
-        if products_to_keep == None or products_to_keep == []:
-            products_to_keep =list(product(*[range(dim) for dim in self.hilbertspace.subsystem_dims])) 
-        self.products_to_keep = products_to_keep
-
-        self.evals = self.hilbertspace["evals"][0]
+        self.evals = hilbertspace["evals"][0]
+        self.evecs = hilbertspace["evecs"][0]
+        self.product_to_dressed = generate_single_mapping(self.hilbertspace.hamiltonian(), evals = self.evals, evecs = self.evecs)
 
 
-        evals, evecs = self.hilbertspace.hamiltonian().eigenstates()
-        self.evals = evals
-        self.diag_dressed_hamiltonian = self.truncate_function(qutip.Qobj((
-                2 * np.pi * qutip.Qobj(np.diag(self.evals),
-                dims=[self.hilbertspace.subsystem_dims] * 2)
-        )[:, :]))
-
-
+        #############################################################################################
+        #############################################################################################
+        # TODO: This part about getting negative signs can be written more elegantly
         # Filter product_to_dressed so that it contains only state relevant to the two qubit computational states,
         # Also modify the original qubit index in the product indices to 0 and 1.
         self.filtered_product_to_dressed = {}
@@ -70,7 +62,7 @@ class CoupledSystem:
 
         dressed_idxes_with_negative_sign = []
         for i in range(self.hilbertspace.dimension):
-            arr = evecs[i].full()
+            arr = self.evecs[i].full()
             max_abs_index = np.argmax(np.abs(arr))
             max_abs_value = arr[max_abs_index]
             if max_abs_value > 0:
@@ -84,13 +76,31 @@ class CoupledSystem:
         # Pre-compute the sign multiplier for each dressed index
         self.sign_multiplier = {idx: -1 if idx in dressed_idxes_with_negative_sign_set else 1
                         for idx in self.product_to_dressed.values()}
+        #############################################################################################
+        #############################################################################################
+
+        self.set_new_product_to_keep(products_to_keep)
+
+    def set_new_product_to_keep(self,products_to_keep):
+        if products_to_keep == None or products_to_keep == []:
+            products_to_keep =list(product(*[range(dim) for dim in self.hilbertspace.subsystem_dims])) 
+        
+        if products_to_keep == self.products_to_keep:
+            pass
+
+        self.products_to_keep = products_to_keep
+        self.diag_dressed_hamiltonian = self.truncate_function(qutip.Qobj((
+                2 * np.pi * qutip.Qobj(np.diag(self.evals),
+                dims=[self.hilbertspace.subsystem_dims] * 2)
+        )[:, :]))
 
     def truncate_function(self,qobj):
         return truncate_custom(qobj, self.products_to_keep, self.product_to_dressed)
     
     def pad_back_function(self,qobj):
         return pad_back_custom(qobj, self.products_to_keep, self.product_to_dressed)
-        
+
+
     def run_qutip_mesolve_parrallel(self,
                     initial_states: qutip.Qobj, # truncated initial states
                     tlist: np.array, 
@@ -329,7 +339,6 @@ class FluxoniumOscillatorSystem(CoupledSystem):
                 g_strength:float = 0.18,
 
                 products_to_keep: List[List[int]]= None,
-                w_d:float = None
                 ):
         '''
         Initialize objects before truncation
@@ -339,7 +348,6 @@ class FluxoniumOscillatorSystem(CoupledSystem):
         self.osc = scqubits.Oscillator(E_osc=Er,truncated_dim=osc_level,l_osc=1.0) # l_osc should have been 1/sqrt(2), otherwise I'm effectively reducing the coupling strength by sqrt(2) 
             # https://scqubits.readthedocs.io/en/latest/api-doc/_autosummary/scqubits.core.oscillator.Oscillator.html#scqubits.core.oscillator.Oscillator.n_operator
         hilbertspace = scqubits.HilbertSpace([self.qbt, self.osc])
-        
         hilbertspace.add_interaction(g_strength=g_strength,op1=self.qbt.n_operator, op2=self.osc.n_operator,add_hc=False) # Edited
 
         super().__init__(hilbertspace = hilbertspace,
@@ -348,21 +356,19 @@ class FluxoniumOscillatorSystem(CoupledSystem):
                         computaional_states = [int(computaional_states[0]),int(computaional_states[-1])])
 
         self.a = qutip.Qobj(self.hilbertspace.op_in_dressed_eigenbasis(self.osc.annihilation_operator)[:, :])
-        self.a_trunc = self.truncate_function(self.a)
-        self.driven_operator = self.a_trunc + self.a_trunc.dag() #   self.truncate_function(self.hilbertspace.op_in_dressed_eigenbasis(self.osc.n_operator)) 
-        self.c_ops = [np.sqrt(kappa) * self.a_trunc] 
+        self.set_new_product_to_keep(products_to_keep)
+        self.kappa = kappa
 
-        if w_d!= None:
-            self.w_d = w_d
-        elif drive_transition!= None:
-            self.w_d = transition_frequency(self.hilbertspace,self.product_to_dressed[drive_transition[0]],self.product_to_dressed[drive_transition[1]] ) 
-        elif computaional_states == '1,2':
-            self.w_d = transition_frequency(self.hilbertspace,self.product_to_dressed[(0,0)],self.product_to_dressed[(0,1)] ) 
-        elif computaional_states == '0,1':
-            self.w_d = transition_frequency(self.hilbertspace,self.product_to_dressed[(2,0)],self.product_to_dressed[(2,1)] ) 
-        else:
-            raise Exception('computaional_states not supported')
-                
+    def set_new_product_to_keep(self,products_to_keep):
+        super().set_new_product_to_keep(products_to_keep) 
+        self.a_trunc = self.truncate_function(self.a)
+        self.driven_operator = self.a_trunc + self.a_trunc.dag() #self.truncate_function(self.hilbertspace.op_in_dressed_eigenbasis(self.osc.n_operator)) 
+        self.set_new_kappa(self.kappa)
+
+    def set_new_kappa(self, kappa):
+        self.kappa = kappa
+        self.c_ops = [np.sqrt(self.kappa) * self.a_trunc]
+
 class FluxoniumOscillatorFilterSystem(CoupledSystem):
     '''
     To model leakage detection of 12 fluxonium with purcell filter

@@ -61,14 +61,15 @@ def pad_back_custom(qobj: qutip.Qobj, products_to_keep: Union[list,None], produc
         return qutip.Qobj(padded_matrix)
 
 
-def generate_single_mapping(H_with_interaction_no_drive) -> np.ndarray:
+def generate_single_mapping(H_with_interaction_no_drive,evals = None, evecs = None) -> np.ndarray:
     """
     The input should be in product basis
     Maps product of bare states to dressed state
     Returns a dictionary like {(0,0,0):0,(0,0,1):1}
     Use this function instead of scqubit's because I can change the overlap threshold here
     """
-    evals, evecs = H_with_interaction_no_drive.eigenstates()
+    if evals == None or evecs == None:
+        evals, evecs = H_with_interaction_no_drive.eigenstates()
     overlap_matrix = scqubits.utils.spectrum_utils.convert_evecs_to_ndarray(evecs)
     OVERLAP_THRESHOLD = 0.1
     dims = H_with_interaction_no_drive.dims[0]
