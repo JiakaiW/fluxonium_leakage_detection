@@ -1,5 +1,4 @@
 import concurrent
-from dataclasses import dataclass
 from datetime import datetime
 
 from itertools import product
@@ -15,7 +14,7 @@ import copy
 # from utils_qiskit import *
 # from utils_visualization import *
 from utils_basic_funcs import *
-
+from utils_drive import *
 
 ############################################################################
 #
@@ -26,11 +25,7 @@ from utils_basic_funcs import *
 ############################################################################
 
 
-@dataclass
-class DriveTerm:
-    driven_op: qutip.Qobj
-    pulse_shape_func: Callable
-    pulse_shape_args: Dict
+
 
 class CoupledSystem:
     '''
@@ -598,38 +593,3 @@ def run_dq_ODEsolve_and_post_process_jobs_with_different_systems_but_same_y0(
     '''
     pass
 
-
-
-############################################################################
-#
-#
-# Ancilliary functions about pulse shaping and time dynamics
-#
-#
-############################################################################
-
-def square_pulse_with_rise_fall(t,
-                                args = {}):
-    
-    w_d = args['w_d']
-    amp = args['amp']
-    t_start = args.get('t_start', 0)  # Default start time is 0
-    t_rise = args.get('t_rise', 0)  # Default rise time is 0 for no rise
-    t_square = args.get('t_square', 0)  # Duration of constant amplitude
-
-    def cos_modulation():
-        return 2 * np.pi * amp * np.cos(w_d * 2 * np.pi * t)
-    
-    t_fall_start = t_start + t_rise + t_square  # Start of fall
-    t_end = t_fall_start + t_rise  # End of the pulse
-    
-    if t < t_start:
-        return 0
-    elif t_start <= t <= t_start + t_rise:
-        return np.sin(np.pi * (t - t_start) / (2 * t_rise)) ** 2 * cos_modulation()
-    elif t_start + t_rise < t <= t_fall_start:
-        return cos_modulation()
-    elif t_fall_start < t <= t_end:
-        return np.sin(np.pi * (t_end - t) / (2 * t_rise)) ** 2 * cos_modulation()
-    else:
-        return 0
