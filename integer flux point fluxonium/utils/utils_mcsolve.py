@@ -18,7 +18,7 @@ def pack_mcsolve_chunks(
 
     seeds = list(np.random.randint(0, 2**32,
                         size=ntraj,
-                        dtype=np.uint32))
+                        dtype=np.int64))
 
     chunk_id = existing_chunk_num
 
@@ -52,9 +52,10 @@ def pack_pkl_files_to_zip(zip_filename="mcsolve_input.zip"):
 
 def merge_results(zip_files):
     # Used to merge mcsolve results on HTC condor
-    num_total_states = 0
     averaged_dm_array = None
     tlist = None
+    ntraj = 0
+    expect = None
 
     for zip_file in tqdm(zip_files,desc='progress'):
         if not os.path.exists(zip_file):
@@ -66,9 +67,12 @@ def merge_results(zip_files):
 
         if tlist is None:
             tlist = result.times
+        ntraj += result.ntraj
 
-        num_new_states = len(result.seeds)
-        num_total_states += num_new_states
+        if expect is None:
+            expect = np.array(result.expect) * result.ntraj
+        else:
+            expect += np.array(result.expect)  * result.ntraj
 
         # Convert states to density matrices and sum them up
         states_array = np.array([[state.full() for state in traj] for traj in result.states])
@@ -80,15 +84,17 @@ def merge_results(zip_files):
         else:
             averaged_dm_array += summed_dm_array
 
-    averaged_dm_array /= num_total_states
-    
+    averaged_dm_array /= ntraj
+
     # Convert the final averaged density matrices back to Qobj
     averaged_dms = [qutip.Qobj(dm) for dm in averaged_dm_array]
 
     final_result = qutip.solver.Result()
     final_result.states = averaged_dms
     final_result.times = tlist
+    final_result.ntraj = ntraj
+    final_result.expect = expect/ntraj
 
-    # TODO: add the average of expectations and the individual expectations
+    # TODO:I can't get the individual expectations when one job contain more than one trajectory. (it' pre-averaged)
     return final_result
 
