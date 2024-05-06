@@ -84,7 +84,7 @@ if __name__ == "__main__":
         with multiprocessing.Pool(processes=num_processes) as pool:
             product_states = pool.map(partial_function,result.states)
         result.states_in_product_basis = product_states
-
+        print(f'{i} done')
 
     with open('mcsolve_results_with_product_basis_5000traj.pkl', 'wb') as f:
         pickle.dump(results,f)
