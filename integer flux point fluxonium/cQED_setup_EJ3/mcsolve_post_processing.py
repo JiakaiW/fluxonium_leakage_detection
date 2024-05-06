@@ -65,7 +65,7 @@ def get_product(dressed_dm,pad_back_custom,product_to_dressed,sign_multiplier):
     return rho_product
 
 if __name__ == "__main__":
-    with open('mcsolve_results_averaged.pkl', 'rb') as f:
+    with open('averaged.pkl', 'rb') as f:
         results = pickle.load(f)
 
     num_processes = multiprocessing.cpu_count()
@@ -86,5 +86,5 @@ if __name__ == "__main__":
         result.states_in_product_basis = product_states
 
 
-    with open('mcsolve_results_with_product_basis.pkl', 'wb') as f:
+    with open('mcsolve_results_with_product_basis_5000traj.pkl', 'wb') as f:
         pickle.dump(results,f)
