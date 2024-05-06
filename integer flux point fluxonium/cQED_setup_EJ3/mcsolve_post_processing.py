@@ -47,8 +47,8 @@ list_of_products_to_keep = [
 
 def get_product(dressed_dm,pad_back_custom,product_to_dressed,sign_multiplier):
     dressed_dm_data =    pad_back_custom(dressed_dm)
-    if dressed_dm_data.shape[1] == 1:
-        dressed_dm_data = qutip.ket2dm(dressed_dm_data)
+    # if dressed_dm_data.shape[1] == 1:
+    #     dressed_dm_data = qutip.ket2dm(dressed_dm_data)
     dressed_dm_data = dressed_dm_data.full()
 
     # Infer subsystem dimensions
@@ -68,10 +68,10 @@ if __name__ == "__main__":
     with open('averaged.pkl', 'rb') as f:
         results = pickle.load(f)
 
-    num_processes = multiprocessing.cpu_count()
+    num_processes = 8#multiprocessing.cpu_count()
 
 
-    for i, (result, products_to_keep) in enumerate(zip(results, list_of_products_to_keep)):
+    for i, (result, products_to_keep) in enumerate(zip(results[1:], list_of_products_to_keep[1:])):
         system.set_new_product_to_keep(products_to_keep)
         system.set_new_operators_after_setting_new_product_to_keep()
         
