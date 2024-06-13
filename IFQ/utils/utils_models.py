@@ -292,8 +292,6 @@ class FluxoniumTransmonSystem(CoupledSystem):
     def __init__(self,
                 fluxonium: scqubits.Fluxonium,
                 transmon: scqubits.Transmon,
-
-
                 computaional_states:str, # = '0,1' or '1,2'
                 
                 g_strength:float = 0.18,
@@ -314,6 +312,36 @@ class FluxoniumTransmonSystem(CoupledSystem):
                          products_to_keep = products_to_keep,
                          qbt_position = 0,
                         computaional_states = [int(computaional_states[0]),int(computaional_states[-1])])
+        
+
+class FluxoniumFluxoniumSystem(CoupledSystem):
+    '''
+    To model leakage detection of 12 fluxonium
+    '''
+    def __init__(self,
+                fluxonium1: scqubits.Fluxonium,
+                fluxonium2: scqubits.Fluxonium,
+                computaional_states:str, # = '0,1' or '1,2'
+                
+                g_strength:float = 0.18,
+
+                products_to_keep: List[List[int]]= None,
+                w_d:float = None
+                ):
+        '''
+        Initialize objects before truncation
+        '''
+        
+        self.fluxonium1 = fluxonium1
+        self.fluxonium2 = fluxonium2
+        hilbertspace = scqubits.HilbertSpace([self.fluxonium1, self.fluxonium2])
+        hilbertspace.add_interaction(g_strength=g_strength,op1=self.fluxonium1.n_operator, op2=self.fluxonium2.n_operator,add_hc=False)
+        
+        super().__init__(hilbertspace = hilbertspace,
+                         products_to_keep = products_to_keep,
+                         qbt_position = 0,
+                        computaional_states = [int(computaional_states[0]),int(computaional_states[-1])])
+        
 
 class FluxoniumOscillatorSystem(CoupledSystem):
     '''
