@@ -6,10 +6,10 @@ import numpy as np
 import qutip
 import scqubits
 from typing import List, Union, Tuple
-from utils_basic_funcs import *
-from utils_drive import *
+from utils_v2_for_gfIFQ.utils_basic_funcs import *
+from utils_v2_for_gfIFQ.utils_DriveTerm import *
+from utils_v2_for_gfIFQ.utils_evo import ODEsolve_and_post_process
 
-from utils_evo import *
 ############################################################################
 #
 # Classes about modelling the system and running ODE solvers
