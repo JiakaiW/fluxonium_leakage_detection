@@ -124,6 +124,10 @@ class gfIFQ:
         ]
         return drive_terms
     
+    def get_composite_STIRAP_drive_terms(self):
+        # PHYSICAL REVIEW A 87, 043418 (2013)
+        pass
+
     def get_STIRAP_with_DRAG_drive_terms(self):
         pass
 
