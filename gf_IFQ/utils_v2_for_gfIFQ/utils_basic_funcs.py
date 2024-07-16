@@ -6,6 +6,7 @@ import scqubits
 import qutip
 from typing import Union,List
 
+
 ############################################################################
 #
 #
@@ -13,6 +14,8 @@ from typing import Union,List
 #
 #
 ############################################################################
+
+
 
 def truncate_custom(qobj: qutip.Qobj, products_to_keep: list, product_to_dressed: dict) -> qutip.Qobj:
     products_to_keep_tuples = [tuple(product) for product in products_to_keep]

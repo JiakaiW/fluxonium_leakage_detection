@@ -76,3 +76,31 @@ def square_pulse_with_rise_fall(t,
     else:
         return 0
     
+def masked_optimized_STIRAP_with_modulation(t,args = {}):
+    # Symmetric Rydberg controlled-𝑍 gates with adiabatic pulses M. Saffman, I. I. Beterov, A. Dalal, E. J. Páez, and B. C. Sanders Phys. Rev. A 101, 062309 – Published 3 June 2020
+    # Optimum pulse shapes for stimulated Raman adiabatic passage Phys. Rev. A 80, 013417 G. S. Vasilev, A. Kuhn, and N. V. Vitanov 2009
+    w_d = args['w_d']
+    amp = args['amp']
+    t_stop = args['t_stop']
+    stoke = args['stoke'] # Stoke is the first pulse, pump is the second
+    t_start = args.get('t_start', 0)
+    phi = args.get('phi', 0)
+
+    def cos_modulation():
+        return 2 * np.pi * amp * np.cos(w_d * 2 * np.pi * t - phi)
+    
+    lambda_val = 4
+    tau_for_mono = (t_stop-t_start) / 6
+    center = (t_stop-t_start) / 2 + t_start
+
+    def mono_increasing_f(t):
+        return 1 / (1 + np.exp(-lambda_val * (t-center) / tau_for_mono))
+    
+    def hyper_Gaussian_F(t):
+        T0 = 2 * tau_for_mono
+        return np.exp(  - ((t-center) / T0) ** (2*3) )
+    a = hyper_Gaussian_F(t_start)
+    if stoke:
+        return (hyper_Gaussian_F(t)- a)/(1-a)* np.cos(np.pi/2 * mono_increasing_f(t)) * cos_modulation()
+    else:
+        return (hyper_Gaussian_F(t)- a)/(1-a) * np.sin(np.pi/2 * mono_increasing_f(t)) * cos_modulation()
