@@ -123,16 +123,20 @@ class gfIFQ:
                 ),
         ]
         return drive_terms
-
-    def get_saSTIRAP_drive_terms(self):
-        # Antti Vepsäläinen et al. ,Superadiabatic population transfer in a three-level superconducting circuit.Sci. Adv.5,eaau5999(2019).DOI:10.1126/sciadv.aau5999
-        # Introducing another 2-photon counter-adiabatic term
+    
+    def get_STIRAP_with_DRAG_drive_terms(self):
         pass
 
-    def get_STA_STIRAP_drive_terms(self):
-        #shortcuts-to-adiabaticity
-        #Optimal control of stimulated Raman adiabatic passage in a superconducting qudit. npj Quantum Information volume 8, Article number: 9 (2022) 
+    def get_CD_STIRSAP_drive_terms(self):
+        # CD is a form of Shortcuts-To-Adiabaticity
+        # Antti Vepsäläinen et al. ,Superadiabatic population transfer in a three-level superconducting circuit.Sci. Adv.5,eaau5999(2019).DOI:10.1126/sciadv.aau5999
 
+        # Introducing another 2-photon Counter-Adiabatic term
+        pass
+
+    def get_STIRSAP_drive_terms(self):
+        # Optimal control of stimulated Raman adiabatic passage in a superconducting qudit. npj Quantum Information volume 8, Article number: 9 (2022) 
+        # Optimize the detunings
         pass
 
     def get_inertial_STIRAP_drive_terms(self):
