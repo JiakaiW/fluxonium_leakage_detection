@@ -19,6 +19,7 @@ class DriveTerm:
     pulse_shape_func: Callable
     pulse_id: str
     pulse_shape_args_without_id: Dict[str, float]
+
     pulse_shape_func_with_id: Callable = field(init=False)
     pulse_shape_args_with_id: Dict[str, float] = field(init=False)
     
@@ -34,7 +35,7 @@ class DriveTerm:
         def wrapper(t, args={}):
             try:
                 unmodified_args = {key[:-len(self.pulse_id)]: value for key, value in args.items() if key.endswith(self.pulse_id)}
-                return self._pulse_shape_func(t, unmodified_args)
+                return self.pulse_shape_func(t, unmodified_args)
             except KeyError as e:
                 raise KeyError(f"Missing argument key for pulse_id {self.pulse_id}: {e}")
             except Exception as e:
@@ -49,14 +50,17 @@ class DriveTerm:
 
     def get_pulse_shape_args_with_id(self) -> Dict[str, float]:
         return self.pulse_shape_args_with_id
-
+    
+    def visualize(self,ax,tlist,args):
+        ax.plot(tlist, self.pulse_shape_func_with_id(tlist,args),label = self.pulse_id)
+        ax.text(tlist[int(len(tlist)/3)], 2*np.pi* 0.99* self.pulse_shape_args_without_id['amp'],f"{self.pulse_id} freq: {self.pulse_shape_args_without_id['w_d']}")
 def square_pulse_with_rise_fall(t,
                                 args = {}):
     
     w_d = args['w_d']
     amp = args['amp']
     t_start = args.get('t_start', 0)  # Default start time is 0
-    t_rise = args.get('t_rise', 0)  # Default rise time is 0 for no rise
+    t_rise = args.get('t_rise', 1e-13)  # Default rise time is 0 for no rise
     t_square = args.get('t_square', 0)  # Duration of constant amplitude
 
     def cos_modulation():
@@ -76,7 +80,7 @@ def square_pulse_with_rise_fall(t,
     else:
         return 0
     
-def masked_optimized_STIRAP_with_modulation(t,args = {}):
+def STIRAP_with_modulation(t,args = {}):
     # Symmetric Rydberg controlled-𝑍 gates with adiabatic pulses M. Saffman, I. I. Beterov, A. Dalal, E. J. Páez, and B. C. Sanders Phys. Rev. A 101, 062309 – Published 3 June 2020
     # Optimum pulse shapes for stimulated Raman adiabatic passage Phys. Rev. A 80, 013417 G. S. Vasilev, A. Kuhn, and N. V. Vitanov 2009
     w_d = args['w_d']
