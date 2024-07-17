@@ -54,6 +54,7 @@ class DriveTerm:
     def visualize(self,ax,tlist,args):
         ax.plot(tlist, self.pulse_shape_func_with_id(tlist,args),label = self.pulse_id)
         ax.text(tlist[int(len(tlist)/3)], 2*np.pi* 0.99* self.pulse_shape_args_without_id['amp'],f"{self.pulse_id} freq: {self.pulse_shape_args_without_id['w_d']}")
+
 def square_pulse_with_rise_fall(t,
                                 args = {}):
     
@@ -77,6 +78,26 @@ def square_pulse_with_rise_fall(t,
         return cos_modulation()
     elif t_fall_start < t <= t_end:
         return np.sin(np.pi * (t_end - t) / (2 * t_rise)) ** 2 * cos_modulation()
+    else:
+        return 0
+
+def sin_squared_pulse_with_modulation(t, args={}):
+    w_d = args['w_d']
+    amp = args['amp']
+    t_duration = args.get('t_duration')
+    t_start = args.get('t_start', 0)  # Default start time is 0
+    phi = args.get('phi', 0)
+
+    def cos_modulation():
+        return 2 * np.pi * amp * np.cos(w_d * 2 * np.pi * t - phi)
+    
+    t_end = t_start + t_duration  # End of the pulse
+    
+    if t < t_start:
+        return 0
+    elif t_start <= t <= t_end:
+        envelope = np.sin(np.pi * (t - t_start) / t_duration) ** 2
+        return envelope * cos_modulation()
     else:
         return 0
     

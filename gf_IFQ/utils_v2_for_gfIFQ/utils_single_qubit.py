@@ -36,12 +36,12 @@ class gfIFQ:
                                             truncated_dim=truncated_dim)
         self.truncated_dim = truncated_dim
         self.evals = self.fluxonium.eigenvals(evals_count=truncated_dim)
-        self.diag_hamiltonian = qutip.Qobj(np.diag(self.evals))
+        self.diag_hamiltonian = qutip.Qobj(2 * np.pi * np.diag(self.evals))
         self.phi_tabel = self.fluxonium.matrixelement_table(
             'phi_operator', evals_count=truncated_dim)
         self.n_tabel = self.fluxonium.matrixelement_table(
             'n_operator', evals_count=truncated_dim)
-        
+
     def get_c_ops(self,
                   temp_in_mK,
                   loss_tangent_ref,
@@ -88,65 +88,111 @@ class gfIFQ:
                                j,
                                k,
                                t_stop,
-                               Rabi_freq0 = 1e-1,
-                               t_start = 0,
-                               phi = 0
+                               Rabi_freq0=1e-1,
+                               t_start=0,
+                               phi=0
                                ):
-        amp_ij = Rabi_freq0 / np.abs(self.n_tabel[i,j])
-        amp_jk = Rabi_freq0 / np.abs(self.n_tabel[j,k])
+        amp_ij = Rabi_freq0 / np.abs(self.n_tabel[i, j])
+        amp_jk = Rabi_freq0 / np.abs(self.n_tabel[j, k])
         drive_terms = [
-            DriveTerm( 
-                driven_op=qutip.Qobj(self.fluxonium.n_operator(energy_esys=True)),
+            DriveTerm(
+                driven_op=qutip.Qobj(
+                    self.fluxonium.n_operator(energy_esys=True)),
                 pulse_shape_func=STIRAP_with_modulation,
-                pulse_id = 'stoke',
+                pulse_id='stoke',
                 pulse_shape_args_without_id={
-                    'w_d':np.abs(self.evals[k]-self.evals[j])/(2*np.pi), # Without 2pi
-                    'amp': amp_jk, # Without 2pi
+                    'w_d': np.abs(self.evals[k]-self.evals[j]),  # Without 2pi
+                    'amp': amp_jk,  # Without 2pi
                     't_stop': t_stop,
                     'stoke': True,
                     't_start': t_start,
-                    'phi':phi
-                  },
-                ),
-            DriveTerm( 
-                driven_op=qutip.Qobj(self.fluxonium.n_operator(energy_esys=True)),
+                    'phi': phi
+                },
+            ),
+            DriveTerm(
+                driven_op=qutip.Qobj(
+                    self.fluxonium.n_operator(energy_esys=True)),
                 pulse_shape_func=STIRAP_with_modulation,
-                pulse_id = 'pump',
+                pulse_id='pump',
                 pulse_shape_args_without_id={
-                    'w_d':np.abs(self.evals[j]-self.evals[i])/(2*np.pi), # Without 2pi
-                    'amp': amp_ij, # Without 2pi
+                    'w_d': np.abs(self.evals[j]-self.evals[i]),  # Without 2pi
+                    'amp': amp_ij,  # Without 2pi
                     't_stop': t_stop,
                     'stoke': False,
                     't_start': t_start,
-                    'phi':phi
-                  },
-                ),
+                    'phi': phi
+                },
+            ),
         ]
         return drive_terms
-    
-    def get_composite_STIRAP_drive_terms(self):
-        # PHYSICAL REVIEW A 87, 043418 (2013)
+
+    def get_Raman_drive_terms(self,
+                              i,
+                              j,
+                              k,
+                              detuning,
+                              t_duration,
+                              area_scaling_factor,
+                              t_start=0,
+                              phi=0
+                              ):
+
+        amp_ij = area_scaling_factor * np.pi / \
+            t_duration / np.abs(self.n_tabel[i, j])
+        amp_jk = area_scaling_factor*np.pi / \
+            t_duration / np.abs(self.n_tabel[j, k])
+        drive_terms = [
+            DriveTerm(
+                driven_op=qutip.Qobj(
+                    self.fluxonium.n_operator(energy_esys=True)),
+                pulse_shape_func=sin_squared_pulse_with_modulation,
+                pulse_id='ij',
+                pulse_shape_args_without_id={
+                    'w_d': np.abs(self.evals[k]-self.evals[j])-detuning,  # Without 2pi
+                    'amp': amp_jk,  # Without 2pi
+                    't_duration': t_duration,
+                    't_start': t_start,
+                    'phi': phi
+                },
+            ),
+            DriveTerm(
+                driven_op=qutip.Qobj(
+                    self.fluxonium.n_operator(energy_esys=True)),
+                pulse_shape_func=sin_squared_pulse_with_modulation,
+                pulse_id='jk',
+                pulse_shape_args_without_id={
+                    'w_d': np.abs(self.evals[j]-self.evals[i])-detuning,  # Without 2pi
+                    'amp': amp_ij,  # Without 2pi
+                    't_duration': t_duration,
+                    't_start': t_start,
+                    'phi': phi
+                },
+            ),
+        ]
+        return drive_terms
+
+    # def get_composite_STIRAP_drive_terms(self):
+    #     # PHYSICAL REVIEW A 87, 043418 (2013)
+    #     pass
+
+    # def get_STIRAP_with_DRAG_drive_terms(self):
+    #     pass
+
+    # def get_CD_STIRSAP_drive_terms(self):
+    #     # CD is a form of Shortcuts-To-Adiabaticity
+    #     # Antti Vepsäläinen et al. ,Superadiabatic population transfer in a three-level superconducting circuit.Sci. Adv.5,eaau5999(2019).DOI:10.1126/sciadv.aau5999
+
+    #     # Introducing another 2-photon Counter-Adiabatic term
+    #     pass
+
+    # def get_STIRSAP_drive_terms(self):
+    #     # Optimal control of stimulated Raman adiabatic passage in a superconducting qudit. npj Quantum Information volume 8, Article number: 9 (2022)
+    #     # Optimize the detunings
+    #     pass
+
+    # def get_inertial_STIRAP_drive_terms(self):
+        # Inertial geometric quantum logic gates D. Turyansky, O. Ovdat, R. Dann, Z. Aqua, R. Kosloff, B. Dayan, and A. Pick. Phys. Rev. Applied 21, 054033 – Published 17 May 2024
         pass
-
-    def get_STIRAP_with_DRAG_drive_terms(self):
-        pass
-
-    def get_CD_STIRSAP_drive_terms(self):
-        # CD is a form of Shortcuts-To-Adiabaticity
-        # Antti Vepsäläinen et al. ,Superadiabatic population transfer in a three-level superconducting circuit.Sci. Adv.5,eaau5999(2019).DOI:10.1126/sciadv.aau5999
-
-        # Introducing another 2-photon Counter-Adiabatic term
-        pass
-
-    def get_STIRSAP_drive_terms(self):
-        # Optimal control of stimulated Raman adiabatic passage in a superconducting qudit. npj Quantum Information volume 8, Article number: 9 (2022) 
-        # Optimize the detunings
-        pass
-
-    def get_inertial_STIRAP_drive_terms(self):
-        #Inertial geometric quantum logic gates D. Turyansky, O. Ovdat, R. Dann, Z. Aqua, R. Kosloff, B. Dayan, and A. Pick. Phys. Rev. Applied 21, 054033 – Published 17 May 2024
-        pass
-
 
     def run_qutip_mesolve_parrallel(self,
                                     initial_states: qutip.Qobj,
@@ -180,24 +226,24 @@ class gfIFQ:
 
         return results
 
-
     def get_pi_pulse_drive_terms(self,
-                               i,
-                               j,
-                               t_square,
-                               amp = 1e-2,
-                               ):
+                                 i,
+                                 j,
+                                 t_square,
+                                 amp=1e-2,
+                                 ):
 
         drive_terms = [
-            DriveTerm( 
-                driven_op=qutip.Qobj(self.fluxonium.n_operator(energy_esys=True)),
+            DriveTerm(
+                driven_op=qutip.Qobj(
+                    self.fluxonium.n_operator(energy_esys=True)),
                 pulse_shape_func=square_pulse_with_rise_fall,
-                pulse_id = 'pi',
+                pulse_id='pi',
                 pulse_shape_args_without_id={
-                    'w_d':self.evals[j]-self.evals[i], # Without 2pi
-                    'amp': amp, # Without 2pi
+                    'w_d': self.evals[j]-self.evals[i],  # Without 2pi
+                    'amp': amp,  # Without 2pi
                     't_square': t_square,
-                  },
-                )
+                },
+            )
         ]
         return drive_terms
