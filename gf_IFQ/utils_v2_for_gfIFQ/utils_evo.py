@@ -92,9 +92,9 @@ def ODEsolve_and_post_process(
     result = post_process(result,
                                  post_processing_funcs,
                                 post_processing_args)
-    if file_name!= None:
-        current_datetime = datetime.now()
-        datetime_string = current_datetime.strftime("%Y-%m-%d %H:%M:%S")
-        with open(f'{file_name} {datetime_string}.pkl', 'wb') as file:
-            pickle.dump(result, file)
+    # if file_name!= None:
+    #     current_datetime = datetime.now()
+    #     datetime_string = current_datetime.strftime("%Y-%m-%d %H:%M:%S")
+    #     with open(f'{file_name} {datetime_string}.pkl', 'wb') as file:
+    #         pickle.dump(result, file)
     return result

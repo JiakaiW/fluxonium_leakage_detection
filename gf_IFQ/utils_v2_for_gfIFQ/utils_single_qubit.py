@@ -5,7 +5,7 @@ from loky import get_reusable_executor
 import numpy as np
 import qutip
 import scqubits
-from typing import List, Union, Tuple
+from typing import List, Union, Tuple,Any
 from utils_v2_for_gfIFQ.utils_basic_funcs import *
 from utils_v2_for_gfIFQ.utils_DriveTerm import *
 from utils_v2_for_gfIFQ.utils_evo import *
@@ -132,44 +132,48 @@ class gfIFQ:
                               k,
                               detuning,
                               t_duration,
-                              area_scaling_factor,
+                              shape:str,
+                              amp_scaling_factor,
+                              amp1_scaling_factor = 1,
+                              amp2_scaling_factor = 1,
                               t_start=0,
                               phi=0
                               ):
-
-        amp_ij = area_scaling_factor * np.pi / \
-            t_duration / np.abs(self.n_tabel[i, j])
-        amp_jk = area_scaling_factor*np.pi / \
-            t_duration / np.abs(self.n_tabel[j, k])
-        drive_terms = [
-            DriveTerm(
-                driven_op=qutip.Qobj(
-                    self.fluxonium.n_operator(energy_esys=True)),
-                pulse_shape_func=sin_squared_pulse_with_modulation,
-                pulse_id='ij',
-                pulse_shape_args_without_id={
-                    'w_d': np.abs(self.evals[k]-self.evals[j])-detuning,  # Without 2pi
-                    'amp': amp_jk,  # Without 2pi
-                    't_duration': t_duration,
-                    't_start': t_start,
-                    'phi': phi
-                },
-            ),
-            DriveTerm(
-                driven_op=qutip.Qobj(
-                    self.fluxonium.n_operator(energy_esys=True)),
-                pulse_shape_func=sin_squared_pulse_with_modulation,
-                pulse_id='jk',
-                pulse_shape_args_without_id={
-                    'w_d': np.abs(self.evals[j]-self.evals[i])-detuning,  # Without 2pi
-                    'amp': amp_ij,  # Without 2pi
-                    't_duration': t_duration,
-                    't_start': t_start,
-                    'phi': phi
-                },
-            ),
-        ]
-        return drive_terms
+        if shape == 'sin^2':
+            # area =  amp= 2*np.pi /t_duration
+            amp_ij = amp_scaling_factor*amp1_scaling_factor * np.pi / \
+                t_duration / np.abs(self.n_tabel[i, j])
+            amp_jk = amp_scaling_factor*amp2_scaling_factor*np.pi / \
+                t_duration / np.abs(self.n_tabel[j, k])
+            drive_terms = [
+                DriveTerm(
+                    driven_op=qutip.Qobj(
+                        self.fluxonium.n_operator(energy_esys=True)),
+                    pulse_shape_func=sin_squared_pulse_with_modulation,
+                    pulse_id='ij',
+                    pulse_shape_args_without_id={
+                        'w_d': np.abs(self.evals[k]-self.evals[j])-detuning,  # Without 2pi
+                        'amp': amp_jk,  # Without 2pi
+                        't_duration': t_duration,
+                        't_start': t_start,
+                        'phi': phi
+                    },
+                ),
+                DriveTerm(
+                    driven_op=qutip.Qobj(
+                        self.fluxonium.n_operator(energy_esys=True)),
+                    pulse_shape_func=sin_squared_pulse_with_modulation,
+                    pulse_id='jk',
+                    pulse_shape_args_without_id={
+                        'w_d': np.abs(self.evals[j]-self.evals[i])-detuning,  # Without 2pi
+                        'amp': amp_ij,  # Without 2pi
+                        't_duration': t_duration,
+                        't_start': t_start,
+                        'phi': phi
+                    },
+                ),
+            ]
+            return drive_terms
 
     # def get_composite_STIRAP_drive_terms(self):
     #     # PHYSICAL REVIEW A 87, 043418 (2013)
@@ -193,6 +197,29 @@ class gfIFQ:
     # def get_inertial_STIRAP_drive_terms(self):
         # Inertial geometric quantum logic gates D. Turyansky, O. Ovdat, R. Dann, Z. Aqua, R. Kosloff, B. Dayan, and A. Pick. Phys. Rev. Applied 21, 054033 – Published 17 May 2024
         pass
+
+
+    def get_pi_pulse_drive_terms(self,
+                                 i,
+                                 j,
+                                 t_square,
+                                 amp=1e-2,
+                                 ):
+
+        drive_terms = [
+            DriveTerm(
+                driven_op=qutip.Qobj(
+                    self.fluxonium.n_operator(energy_esys=True)),
+                pulse_shape_func=square_pulse_with_rise_fall,
+                pulse_id='pi',
+                pulse_shape_args_without_id={
+                    'w_d': self.evals[j]-self.evals[i],  # Without 2pi
+                    'amp': amp,  # Without 2pi
+                    't_square': t_square,
+                },
+            )
+        ]
+        return drive_terms
 
     def run_qutip_mesolve_parrallel(self,
                                     initial_states: qutip.Qobj,
@@ -225,25 +252,37 @@ class gfIFQ:
                 results[original_index] = future.result()
 
         return results
-
-    def get_pi_pulse_drive_terms(self,
-                                 i,
-                                 j,
-                                 t_square,
-                                 amp=1e-2,
-                                 ):
-
-        drive_terms = [
-            DriveTerm(
-                driven_op=qutip.Qobj(
-                    self.fluxonium.n_operator(energy_esys=True)),
-                pulse_shape_func=square_pulse_with_rise_fall,
-                pulse_id='pi',
-                pulse_shape_args_without_id={
-                    'w_d': self.evals[j]-self.evals[i],  # Without 2pi
-                    'amp': amp,  # Without 2pi
-                    't_square': t_square,
-                },
-            )
-        ]
-        return drive_terms
+    
+def run_parallel_ODEsolve_and_post_process_jobs_with_different_systems(
+        list_of_systems: List[gfIFQ],
+        list_of_kwargs: list[Any],
+        max_workers = None,
+        store_states = True,
+        post_processing = [],
+    ):
+    assert len(list_of_systems) == len(list_of_kwargs)
+    
+    results = [None] * len(list_of_systems)
+    with get_reusable_executor(max_workers=max_workers, context='loky') as executor:
+        futures = {}
+        for i in range(len(list_of_systems)):
+            post_processing_funcs = []
+            post_processing_args = []
+            future = executor.submit(
+                ODEsolve_and_post_process, 
+                y0=list_of_kwargs[i]['y0'], 
+                tlist=list_of_kwargs[i]['tlist'], 
+                static_hamiltonian=list_of_systems[i].diag_hamiltonian,
+                drive_terms=list_of_kwargs[i].get('drive_terms', None),
+                c_ops=list_of_kwargs[i].get('c_ops', None),
+                e_ops=list_of_kwargs[i].get('e_ops', None),
+                store_states = store_states,
+                post_processing_funcs=post_processing_funcs,
+                post_processing_args=post_processing_args,
+                file_name = None)
+            futures[future] = i
+        
+        for future in concurrent.futures.as_completed(futures):
+            original_index = futures[future]
+            results[original_index] = future.result()
+    return results

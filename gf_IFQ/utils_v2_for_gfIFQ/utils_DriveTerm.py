@@ -51,6 +51,12 @@ class DriveTerm:
     def get_pulse_shape_args_with_id(self) -> Dict[str, float]:
         return self.pulse_shape_args_with_id
     
+    def get_pulse_shape_arg_val_without_id(self) -> Dict[str, float]:
+        return self.pulse_shape_args_with_id
+    
+    def set_pulse_shape_arg_val_without_id(self,key,value):
+        self.pulse_shape_args_with_id[f"{key}{self.pulse_id}"] = value
+    
     def visualize(self,ax,tlist,args):
         ax.plot(tlist, self.pulse_shape_func_with_id(tlist,args),label = self.pulse_id)
         ax.text(tlist[int(len(tlist)/3)], 2*np.pi* 0.99* self.pulse_shape_args_without_id['amp'],f"{self.pulse_id} freq: {self.pulse_shape_args_without_id['w_d']}")
@@ -100,7 +106,32 @@ def sin_squared_pulse_with_modulation(t, args={}):
         return envelope * cos_modulation()
     else:
         return 0
+
+def gaussian_pulse(t, args={}):
+    amp = args['amp']
+    t_duration = args['t_duration']
+    t_start = args.get('t_start', 0)  # Default start time is 0
+    how_many_sigma = args.get('how_many_sigma', 6)  # Default factor to determine sigma
+    normalize = args.get('normalize', False)  # Default normalization is False
+
+    sigma = t_duration/how_many_sigma
+    t_center = t_start + t_duration / 2  # Center of the Gaussian pulse
+
+    def gaussian(t):
+        return amp * np.exp(-((t - t_center) ** 2) / (2 * sigma ** 2))
+
+    t_end = t_start + t_duration  # End of the pulse
+
+    if t < t_start or t > t_end:
+        return 0
+    else:
+        pulse_value = gaussian(t)
+        if normalize:
+            a = gaussian(t_start)
+            pulse_value = (pulse_value - a) / (1 - a)
+        return pulse_value
     
+
 def STIRAP_with_modulation(t,args = {}):
     # Symmetric Rydberg controlled-𝑍 gates with adiabatic pulses M. Saffman, I. I. Beterov, A. Dalal, E. J. Páez, and B. C. Sanders Phys. Rev. A 101, 062309 – Published 3 June 2020
     # Optimum pulse shapes for stimulated Raman adiabatic passage Phys. Rev. A 80, 013417 G. S. Vasilev, A. Kuhn, and N. V. Vitanov 2009
