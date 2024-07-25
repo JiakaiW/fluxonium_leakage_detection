@@ -1,0 +1,246 @@
+import matplotlib.pyplot as plt
+
+class Jinxi:
+    def __init__(self,chain,stack = 50) -> None:
+        self.chain = chain
+        self.stack = stack
+
+        
+    def get_skills(self):
+        return [self.jinxi_normal_a,self.jinxi_normal_e,self.jinxi_linxiao_a,self.jinxi_R,self.jinxi_big_e]
+    
+    def common_multiplier(self):
+        mult = 1
+        if self.chain>= 3:
+            ATK_base_mult = 2.25
+            mult*=(ATK_base_mult+0.25)/ATK_base_mult
+        if self.chain >= 4:
+            element_base_mult = 1.9
+            mult*= (element_base_mult+0.2)/element_base_mult
+        return mult
+    
+    def jinxi_normal_a(self):
+        base = 66.47+\
+            38.99+19.5*3+\
+            10.65*7+31.94+\
+            63.09+94.63
+        return self.common_multiplier() * base, '地面4a'
+    
+    def jinxi_normal_e(self):
+        base = 9.87*4+29.59+4+39.45
+        return self.common_multiplier() * base, '地面e'
+    
+    def jinxi_linxiao_a(self):
+        base = 88.62+\
+                77.97+25.99+25.99+\
+                99.44+66.3+\
+                18.67*6+74.67
+        return self.common_multiplier() * base, '空中4a'
+    
+    def jinxi_big_e(self):
+        base  = 19.89*6+347.92+44.54*self.stack
+        mult = 1
+        if self.chain>=1:
+            element_base = 2.1
+            mult*= (element_base+0.8+0.48)/element_base
+        if self.chain >=6:
+            base *= 1.45
+        return self.common_multiplier() * base * mult, '一喷'
+        
+    def jinxi_R(self):
+        base = 449.81+1166.22
+        mult = 1
+        if self.chain>=5:
+            mult *= 2.2
+        return self.common_multiplier() *base * mult, '大'
+
+class Yinlin:
+    def __init__(self,chain) -> None:
+        self.chain = chain
+
+    def get_skills(self):
+        return [self.yinlin_ee_with_smallbuff,self.yinlin_aaaa,self.yinlin_heavy,self.yinlin_coor,self.yinlin_R]
+    
+    def common_multiplier(self):
+        mult = 1
+        if self.chain >= 4:
+            ATK_base_mult = 2.25+0.18
+            mult*=(ATK_base_mult+0.2)/ATK_base_mult
+        return mult
+    
+    def yinlin_ee_with_smallbuff(self):
+        ee = 59.65*3+89.47*4
+        small_buff = 19.89*4
+        ee_mult = 1
+        if self.chain>=1:
+            element_base = 1.9
+            ee_mult *= (element_base+0.7)/element_base
+        return self.common_multiplier() * (
+            ee * ee_mult + small_buff
+        ), 'ee+小标'
+    
+    def yinlin_aaaa(self):
+        base = 28.81+33.82*2+13.99*7+75.16
+        return self.common_multiplier() *base, '地面4a'
+    
+    def yinlin_heavy(self):
+        base = 178.93*2
+        return self.common_multiplier() *base, '蓄力重击'
+    
+    def yinlin_coor(self):
+        base = 78.64*14
+        mult = 1
+        if self.chain >= 3:
+            mult *= 1.55
+        return self.common_multiplier() *base * mult, '14下协同'
+    
+    def yinlin_R(self):
+        base = 116.56*7
+        mult = 1
+        if self.chain >= 5:
+            element_base = 1.9
+            mult *= (element_base+1)/element_base
+        extra = 0
+        if self.chain >= 6:
+            extra = 419.59*4
+        return self.common_multiplier() * (base * mult + extra), '大'
+
+
+class rover_havoc:
+    def __init__(self) -> None:
+        pass 
+    def get_skills(self):
+        return [self.rover_aaaaa,self.rover_e,self.rover_heavy,self.rover_AAAAA,self.rover_E,self.rover_R]
+    
+    def common_multiplier(self):
+        mult = 1
+        return mult
+    
+    def rover_aaaaa(self):
+        base = 56.67 + 56.67*2 + 85+ 40.30*3 + 94.44*2
+        return self.common_multiplier() *base, '5a'
+    
+    def rover_e(self):
+        base = 286.29*2
+        ee_mult = (1.9+0.3)/1.9
+        return self.common_multiplier() * (
+            base * ee_mult
+        ), 'e'
+    
+    def rover_heavy(self):
+        base = 228.14
+        return self.common_multiplier() *base, '重变身'
+    
+    def rover_AAAAA(self):
+        base = 56.37 + 93.94 + 155.67 + 37.13*3+111.39 + 28.52*4+114.07
+        mult = (1.9+0.2)/1.9
+        return self.common_multiplier() *base*mult, '5A'
+    
+    def rover_E(self):
+        base = 276.35*2+9.95*4
+        ee_mult = (1.9+0.3+0.2)/1.9
+        return self.common_multiplier() * (
+            base * ee_mult
+        ), 'E'
+    
+    def rover_R(self):
+        base = 1520.90
+        mult = (1.9+0.2)/1.9
+        return self.common_multiplier() * base*mult, '大'
+    
+class ChangLi:
+    def __init__(self,chain) -> None:
+        self.chain = chain
+
+    def get_skills(self):
+        return [self.AAAA,self.E,self.heavy,self.R]
+    
+    def common_multiplier(self):
+        #https://bbs.nga.cn/read.php?tid=40903577 无视防御
+        mult = 1
+        mult*=(1.9+0.1)/1.9
+        mult*=(52.9)/48.84
+        if self.chain >= 1:
+            mult*=(1.95+0.1)/1.95
+        if self.chain >= 4:
+            ATK_base_mult = 2.25
+            mult*=(ATK_base_mult+0.2)/ATK_base_mult
+        return mult    # def aaaa(self):
+    #     base = 29.49* 2 + 35.49*2_36.45*3+50.7+29.58*4
+    #     return self.common_multiplier() *base, '地面4a'
+
+    def AAAA(self):
+        base = 61.35+50.87*2 + 44*3 + 38.03 + 22.18*4
+        return self.common_multiplier() *base, '空中4a'
+    
+    def E(self):
+        E = 81.88*3 + 163.76 + 72.68 + 109.02
+        mult = 1
+        if self.chain>=1:
+            element_base = 1.9
+            mult *= (element_base+0.7+0.45)/element_base
+        return self.common_multiplier() * (
+            E * mult
+        ), '空中e'
+    
+    def heavy(self):
+        base = 39.25*5 + 457.85
+        mult = 1
+        if self.chain >= 5:
+            mult*=1.5
+            mult*=(2.0+0.5+0.45)/2.0
+        if self.chain >= 6:
+            mult /=(52.9)/48.84
+            mult *=67.97/48.84
+        return self.common_multiplier() *base* mult, '特殊重'
+    
+    def R(self):
+        base = 1212.75
+        mult = 1
+        if self.chain >= 3:
+            mult *= (2.1+0.8)/2.1
+        if self.chain >= 6:
+            mult /=(52.9)/48.84
+            mult *=67.97/48.84
+        return self.common_multiplier() * base * mult , '大'
+    
+
+
+plt.rcParams['font.family'] = 'Microsoft YaHei'
+colors = ['cyan', 'springgreen', 'lightcoral', 'violet', 'cornflowerblue','khaki']
+
+
+jinxi_objs =  [Jinxi(chain,50) for chain in range(7)]
+changli_objects = [ChangLi(chain) for chain in range(7)]
+yinlin_objects = [Yinlin(chain) for chain in range(7)]
+rover = rover_havoc()
+fig, ax = plt.subplots(1,1,figsize=(25, 8))
+
+title = '一套伤害, (假设今汐50层, 假设每个角色已有攻击力乘区2.25,已有增伤区1.9)'
+characteres = jinxi_objs + changli_objects+yinlin_objects+ [rover]
+for i, obj in enumerate(characteres):
+    skills = obj.get_skills()
+    heights = [skill()[0] for skill in skills]
+    labels = [skill()[1] for skill in skills]
+    bottom = 0
+    for j, height in enumerate(heights):
+        if i<=6:
+            x = i
+        elif i <= 13:
+            x = i+1
+        elif i <= 20:
+            x = i+2
+        elif i <= 26:
+            x = i+3
+        p = ax.bar(x, height, bottom=bottom, color=colors[j])
+        bottom += height
+        ax.bar_label(p, labels =[labels[j]+f" {heights[j]:.0f}"],label_type='center')
+ax.set_ylabel('等效倍率')
+ax.set_xlabel('Objects')
+ax.set_title(title)
+ax.set_xticks(range(len(characteres)+3))
+ax.set_xticklabels([f'Jinxi {i}' for i in range(7)] + ['']+[f'Changli {i}' for i in range(7)] + ['']+[f'Yinlin {i}' for i in range(7)] + [''] + ['暗主'], rotation=45)
+ax.grid(visible=True,axis='y')
+ax.text(10,10000,'需要除以站场时间得到DPS',size = 50)
+plt.tight_layout()
+plt.show()
