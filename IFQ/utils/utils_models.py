@@ -362,14 +362,14 @@ class FluxoniumOscillatorSystem(CoupledSystem):
                 kappa = 0.001,
 
                 g_strength:float = 0.18,
-
+                fluxonium_flux = 0,
                 products_to_keep: List[List[int]]= None,
                 ):
         '''
         Initialize objects before truncation
         '''
         
-        self.qbt = scqubits.Fluxonium(EJ=EJ,EC=EC,EL=EL,flux=0,cutoff=110,truncated_dim=qubit_level)
+        self.qbt = scqubits.Fluxonium(EJ=EJ,EC=EC,EL=EL,flux=fluxonium_flux,cutoff=110,truncated_dim=qubit_level)
         self.osc = scqubits.Oscillator(E_osc=Er,truncated_dim=osc_level,l_osc=1.0) # l_osc should have been 1/sqrt(2), otherwise I'm effectively reducing the coupling strength by sqrt(2) 
             # https://scqubits.readthedocs.io/en/latest/api-doc/_autosummary/scqubits.core.oscillator.Oscillator.html#scqubits.core.oscillator.Oscillator.n_operator
         hilbertspace = scqubits.HilbertSpace([self.qbt, self.osc])
