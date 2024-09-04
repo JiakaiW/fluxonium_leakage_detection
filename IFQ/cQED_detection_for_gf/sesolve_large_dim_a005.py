@@ -7,8 +7,8 @@ if __name__ == '__main__':
     from multiprocessing import freeze_support
     freeze_support()
 
-    max_ql = 30
-    max_ol = 100
+    max_ql = 20
+    max_ol = 80
     EJ = 4
     EC = EJ/2.7
     EL = EJ/45
@@ -16,9 +16,9 @@ if __name__ == '__main__':
 
     g = 0.2
     w_d = 10.389507326769158
-    amp = 0.003
+    amp = 0.005
 
-    tot_time =920
+    tot_time =1000
     tlist = np.linspace(0, tot_time, tot_time)
     system  =  FluxoniumOscillatorSystem(
                     EJ = EJ,
@@ -72,5 +72,5 @@ if __name__ == '__main__':
 
 
     import pickle
-    with open('sesolve_large_dim_a003.pkl', 'wb') as file:
+    with open('sesolve_large_dim_a005.pkl', 'wb') as file:
         pickle.dump(results, file)
