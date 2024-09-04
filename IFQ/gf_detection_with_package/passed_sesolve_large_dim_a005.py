@@ -1,14 +1,14 @@
 import sys
-sys.path.append('../utils/')
-from utils_models import *
-
+sys.path.append('../CoupledQuantumSystems/')
+from systems import *
+from drive import *
+from evo_parrallel import *
 if __name__ == '__main__':
     # For Windows and MacOS compatibility:
     from multiprocessing import freeze_support
     freeze_support()
-
-    max_ql = 20
-    max_ol = 80
+    max_ql = 13
+    max_ol = 15
     EJ = 4
     EC = EJ/2.7
     EL = EJ/45
@@ -17,8 +17,8 @@ if __name__ == '__main__':
     g = 0.2
     w_d = 10.389507326769158
     amp = 0.005
+    tot_time =100
 
-    tot_time =1000
     tlist = np.linspace(0, tot_time, tot_time)
     system  =  FluxoniumOscillatorSystem(
                     EJ = EJ,
@@ -35,9 +35,6 @@ if __name__ == '__main__':
     
     systems = [system,system,system]
 
-    
-
-
     initial_states  = [
         qutip.basis(max_ql * max_ol, system.product_to_dressed[(ql,0)]) for ql in [0,1,2]
         ]
@@ -53,8 +50,9 @@ if __name__ == '__main__':
             'drive_terms':[DriveTerm( 
                                 driven_op= system.driven_operator,
                                 pulse_shape_func=square_pulse_with_rise_fall,
+                                pulse_id = None,
                                 pulse_shape_args={
-                                    'w_d': w_d ,
+                                    'w_d': w_d,
                                     'amp': amp,
                                     't_rise': 20,
                                     't_square': tot_time

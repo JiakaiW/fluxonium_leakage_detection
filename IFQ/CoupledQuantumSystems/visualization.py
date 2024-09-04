@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import qutip
 import scqubits
 from tqdm import tqdm
-from CoupledQuantumSystems.qobj_manip import *
+from qobj_manip import *
 
 
 ############################################################################
@@ -20,8 +20,6 @@ from CoupledQuantumSystems.qobj_manip import *
 #
 #
 ############################################################################
-
-
 
 
 def compute_expectation(ket_or_dm, operator):
