@@ -28,8 +28,6 @@ def get_product(dressed_dm,pad_back_custom,product_to_dressed,sign_multiplier):
     return rho_product
 
 if __name__ == "__main__":
-
-
     max_ql = 30
     max_ol = 75
     EJ = 3
