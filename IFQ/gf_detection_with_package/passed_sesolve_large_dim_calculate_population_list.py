@@ -2,21 +2,20 @@ import multiprocessing
 import pickle
 from tqdm import tqdm
 import sys
-sys.path.append('../utils/')
-from utils_models import *
+sys.path.append('../CoupledQuantumSystems/')
+from systems import *
 
-max_ql = 30
-max_ol = 100
-EJ = 3
-EC = EJ/4
-EL = EJ/20.5
-Er = 8.46111172
+max_ql = 13
+max_ol = 15
+EJ = 4
+EC = EJ/2.7
+EL = EJ/45
+Er = 10.38695526
 
 g = 0.2
-w_d = 8.460155465243822
-amp = 0.003
-
-tot_time =920
+w_d = 10.389507326769158
+amp = 0.005
+tot_time =100
 tlist = np.linspace(0, tot_time, tot_time)
 system  =  FluxoniumOscillatorSystem(
                 EJ = EJ,
@@ -26,16 +25,16 @@ system  =  FluxoniumOscillatorSystem(
                 g_strength = g,
                 qubit_level = max_ql,
                 osc_level = max_ol,
-                products_to_keep=[[ql, ol] for ql in range(15) for ol in range(max_ol) ],
+                products_to_keep=[[ql, ol] for ql in range(max_ql) for ol in range(max_ol) ],
                 computaional_states = '1,2',
                 )
 
 
 def loop_function(ql):
-    pops_list = [[] for _ in range(15)]
+    pops_list = [[] for _ in range(max_ql)]
     for t_idx in tqdm(range(len(tlist))[::10], desc=f"t loop for ql={ql}"):
         dm = results[ql].states[t_idx]
-        for q in range(15):
+        for q in range(max_ql):
             sum_at_this_t_for_this_q = 0
             for o in range(system.osc.truncated_dim):
                 product_state = (q, o)
@@ -47,7 +46,7 @@ def loop_function(ql):
     return pops_list
 
 if __name__ == "__main__":
-    with open('sesolve_large_dim_a003.pkl', 'rb') as file:
+    with open('sesolve_large_dim_a005.pkl', 'rb') as file:
         results = pickle.load(file)
     lists = []
     # Define the number of processes
@@ -62,5 +61,5 @@ if __name__ == "__main__":
     lists.extend(results)
 
     # Save the lists to a pickle file
-    with open('sesolve_large_dim_pop_list_g0.2a003.pkl', 'wb') as file:
+    with open('sesolve_large_dim_pop_list_g0.2a005.pkl', 'wb') as file:
         pickle.dump(lists, file)

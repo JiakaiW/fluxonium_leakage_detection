@@ -28,7 +28,7 @@ if __name__ == '__main__':
                     g_strength = g,
                     qubit_level = max_ql,
                     osc_level = max_ol,
-                    products_to_keep=[[ql, ol] for ql in range(15) for ol in range(max_ol) ],
+                    products_to_keep=[[ql, ol] for ql in range(max_ql) for ol in range(max_ol) ],
                     computaional_states = '1,2',
                     )
  
