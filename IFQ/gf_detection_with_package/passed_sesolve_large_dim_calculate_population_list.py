@@ -3,7 +3,7 @@ import pickle
 from tqdm import tqdm
 import sys
 sys.path.append('../CoupledQuantumSystems/')
-from systems import *
+from CoupledQuantumSystems.systems import *
 
 max_ql = 13
 max_ol = 15
