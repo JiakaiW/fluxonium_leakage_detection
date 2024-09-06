@@ -3,7 +3,5 @@ _pycache_/
 *pycache*
 *.zip
 *.err
-*long depreciated/depreciated mcsolve w_r = 3/
 Miniconda3-latest-Linux-x86_64.sh
 *.pkl
-*.npz
