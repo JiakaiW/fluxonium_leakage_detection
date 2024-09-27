@@ -1,0 +1,41 @@
+000 (504928.000.000) 2024-09-26 18:42:32 Job submitted from host: <128.105.68.112:9618?addrs=[2607-f388-2200-100-eaeb-d3ff-fea3-4202]-9618+128.105.68.112-9618&alias=ap2001.chtc.wisc.edu&noUDP&sock=schedd_146090_2acf>
+...
+040 (504928.000.000) 2024-09-26 18:43:16 Started transferring input files
+	Transferring to host: <128.105.68.106:9618?addrs=[2607-f388-2200-100-42a6-b7ff-fe82-f6c0]-9618+128.105.68.106-9618&alias=voyles2000.chtc.wisc.edu&noUDP&sock=backfill5_12_141204_bde7_91637>
+...
+040 (504928.000.000) 2024-09-26 18:43:16 Finished transferring input files
+...
+001 (504928.000.000) 2024-09-26 18:43:17 Job executing on host: <128.105.68.106:9618?addrs=[2607-f388-2200-100-42a6-b7ff-fe82-f6c0]-9618+128.105.68.106-9618&alias=voyles2000.chtc.wisc.edu&noUDP&sock=startd_1670699_2133>
+	SlotName: backfill5_12@voyles2000.chtc.wisc.edu
+	AvailableGPUs = {  }
+	CondorScratchDir = "/var/lib/condor/execute/slot5/dir_2187893"
+	Cpus = 4
+	Disk = 2099697
+	GPUs = 0
+	Memory = 4096
+...
+006 (504928.000.000) 2024-09-26 18:48:31 Image size of job updated: 84
+	84  -  MemoryUsage of job (MB)
+	86720  -  ResidentSetSize of job (KB)
+...
+006 (504928.000.000) 2024-09-26 18:53:32 Image size of job updated: 90
+	90  -  MemoryUsage of job (MB)
+	93060  -  ResidentSetSize of job (KB)
+...
+004 (504928.000.000) 2024-09-26 18:53:32 Job was evicted.
+	(0) CPU times
+		Usr 0 00:14:24, Sys 0 00:00:00  -  Run Remote Usage
+		Usr 0 00:00:00, Sys 0 00:00:00  -  Run Local Usage
+	0  -  Run Bytes Sent By Job
+	179098  -  Run Bytes Received By Job
+	Partitionable Resources :    Usage  Request Allocated 
+	   Cpus                 :        0        4         4 
+	   Disk (KB)            :     5805  2097152   2099697 
+	   GPUs                 :                           0 
+	   Memory (MB)          :       90     4096      4096 
+	   TimeExecute (s)      :      615                    
+	   TimeSlotBusy (s)     :      616                    
+...
+009 (504928.000.000) 2024-09-26 18:53:32 Job was aborted.
+	via condor_rm (by user jwang2648)
+...
