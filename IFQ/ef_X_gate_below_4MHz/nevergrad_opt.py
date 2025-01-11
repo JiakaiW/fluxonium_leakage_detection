@@ -24,7 +24,8 @@ class OptimizationProgress:
         self.running_jobs = 0
         self.current_evaluations = []  # List of (params, value) tuples for current batch
         self.start_time = time.time()
-        self.total_evaluations = 0  # Track total number of evaluations
+        self.
+        total_evaluations = 0  # Track total number of evaluations
     
     def create_table(self):
         # Create main table with all columns
