@@ -13,6 +13,7 @@ from rich.console import Console
 from rich import box
 import time
 import json
+import multiprocessing
 
 class OptimizationProgress:
     def __init__(self, detuning, t_duration, budget):
@@ -67,10 +68,10 @@ class OptimizationProgress:
                 f"{self.best_params['amp2_scaling_factor']:.6f}",
             ])
         else:
-            best_row.extend(["-", "-", "-"])
+            best_row.extend(["-", "-"])  # Only two dashes for two parameters
         
         # Add empty cells for current evaluation columns
-        best_row.extend(["-", "-", "-", "-"])
+        best_row.extend(["-", "-", "-"])  # Three dashes for amp1, amp2, Cost
         table.add_row(*best_row)
         
         # Add current evaluations
@@ -82,7 +83,7 @@ class OptimizationProgress:
                 # Add empty cells for status columns
                 row = ["-", "-", "-", "-", "-"]  # Time, Budget, Jobs, s/iter, Best
                 # Add empty cells for best parameters
-                row.extend(["-", "-", "-"])  # Best amp1, amp2
+                row.extend(["-", "-"])  # Only two dashes for Best amp1, amp2
                 # Add current evaluation
                 row.extend([
                     f"{params['amp1_scaling_factor']:.4f}",
@@ -115,17 +116,15 @@ EJ = 4
 EC = EJ/2
 EL = EJ/30
 
-
 qbt = gfIFQ(EJ=EJ, EC=EC, EL=EL, flux=0, truncated_dim=13)
 e_ops = [qutip.ket2dm(qutip.basis(qbt.truncated_dim, i)) for i in range(4)]
 
 with open('results_backup_four_level.pkl', 'rb') as f:
-    results_dict =   pickle.load( f)
+    results_dict = pickle.load(f)
 
-initial_states = [qutip.basis(qbt.truncated_dim, 0),qutip.basis(qbt.truncated_dim, 2)],
+initial_states = [qutip.basis(qbt.truncated_dim, 0), qutip.basis(qbt.truncated_dim, 2)]
 
-def objective(detuning, t_duration, amp1_scaling_factor,amp2_scaling_factor):
-
+def objective(detuning, t_duration, amp1_scaling_factor, amp2_scaling_factor):
     detuning1 = detuning
     detuning2 = detuning
     tlist = np.linspace(0,t_duration,t_duration*2)
@@ -161,102 +160,108 @@ def objective(detuning, t_duration, amp1_scaling_factor,amp2_scaling_factor):
     one_minus_pop0 = np.abs(1- (results[1].expect[0][-1] +  0.99* results[1].expect[1][-1]))
     return one_minus_pop2 + one_minus_pop0
 
-# ---------------------------------------------------------------------
-# SET UP NEVERGRAD INSTRUMENTATION
-# ---------------------------------------------------------------------
+def evaluate_candidate(candidate, detuning, t_duration):
+    """Evaluate a single candidate"""
+    try:
+        value = objective(detuning=detuning, t_duration=t_duration, **candidate.kwargs)
+        return candidate, value
+    except Exception as e:
+        print(f"Error evaluating candidate: {e}")
+        return candidate, float('inf')
 
-detuning_arr = np.array([0.1,0.2,0.3,0.4,0.5])
-t_duration_arr = np.array([50,100,150,200])
-for i,detuning in enumerate(detuning_arr):
-    for j, t_duration in enumerate(t_duration_arr):
-        amp1_scaling_factor, amp2_scaling_factor  = results_dict[(detuning, t_duration)]
-        parametrization = ng.p.Instrumentation(
-            amp1_scaling_factor=ng.p.Log(init=amp1_scaling_factor, lower=amp1_scaling_factor/4, upper=amp1_scaling_factor*4),
-            amp2_scaling_factor=ng.p.Log(init=amp2_scaling_factor, lower=amp2_scaling_factor/4, upper=amp2_scaling_factor*4),
-        )
-        
-        budget = 3000
-        num_workers = 20
-        optimizer = ng.optimizers.CMA(parametrization=parametrization,
-                                budget=budget,
-                                num_workers=num_workers)
-        log_file = f"nevergrad_optimizer_log_{detuning}_{t_duration}.pkl"
-        logger = ng.callbacks.ParametersLogger(log_file)
-        optimizer.register_callback("tell",  logger)
-        # Create progress tracker
-        progress = OptimizationProgress(detuning, t_duration, budget)
-        
-        def evaluate_candidate(candidate):
-            """Evaluate a single candidate"""
-            try:
-                value = objective(detuning=detuning, t_duration=t_duration, **candidate.kwargs)
-                return candidate, value
-            except Exception as e:
-                print(f"Error evaluating candidate: {e}")
-                return candidate, float('inf')
-        
-        # Run optimization with live display
-        with Live(progress.create_table(), refresh_per_second=2) as live:
-            with ProcessPoolExecutor(max_workers=num_workers) as executor:
-                remaining_budget = budget
-                
-                while remaining_budget > 0:
-                    # Ask for a batch of candidates
-                    candidates = []
-                    for _ in range(min(num_workers, remaining_budget)):
-                        try:
-                            candidate = optimizer.ask()
-                            candidates.append(candidate)
-                        except Exception as e:
-                            print(f"Error asking for candidate: {e}")
-                            continue
+def main():
+    # ---------------------------------------------------------------------
+    # SET UP NEVERGRAD INSTRUMENTATION
+    # ---------------------------------------------------------------------
+    detuning_arr = np.array([0.1,0.2,0.3,0.4,0.5])
+    t_duration_arr = np.array([50,100,150,200])
+    
+    for i,detuning in enumerate(detuning_arr):
+        for j, t_duration in enumerate(t_duration_arr):
+            amp1_scaling_factor, amp2_scaling_factor  = results_dict[(detuning, t_duration)]
+            parametrization = ng.p.Instrumentation(
+                amp1_scaling_factor=ng.p.Log(init=amp1_scaling_factor, lower=amp1_scaling_factor/4, upper=amp1_scaling_factor*4),
+                amp2_scaling_factor=ng.p.Log(init=amp2_scaling_factor, lower=amp2_scaling_factor/4, upper=amp2_scaling_factor*4),
+            )
+            
+            budget = 1000
+            num_workers = 20
+            optimizer = ng.optimizers.CMA(parametrization=parametrization,
+                                    budget=budget,
+                                    num_workers=num_workers)
+            log_file = f"nevergrad_optimizer_log_{detuning}_{t_duration}.pkl"
+            logger = ng.callbacks.ParametersLogger(log_file)
+            optimizer.register_callback("tell",  logger)
+            # Create progress tracker
+            progress = OptimizationProgress(detuning, t_duration, budget)
+            
+            # Run optimization with live display
+            with Live(progress.create_table(), refresh_per_second=2) as live:
+                with ProcessPoolExecutor(max_workers=num_workers) as executor:
+                    remaining_budget = budget
                     
-                    if not candidates:
-                        break
-                    
-                    # Update progress with batch size
-                    progress.update(None, running_jobs=len(candidates), budget=remaining_budget)
-                    live.update(progress.create_table())
-                    
-                    # Evaluate candidates in parallel
-                    futures = [executor.submit(evaluate_candidate, c) for c in candidates]
-                    
-                    # Process results as they complete
-                    for future in futures:
-                        try:
-                            candidate, value = future.result()
-                            optimizer.tell(candidate, value)
-                            progress.update(value, candidate.kwargs)
-                            remaining_budget -= 1
-                            live.update(progress.create_table())
-                        except Exception as e:
-                            print(f"Error processing result: {e}")
-                            continue
-                    
-                    # Update display
-                    live.update(progress.create_table())
-                    time.sleep(0.1)  # Small delay to prevent excessive updates
-        
-        # Get the recommendation
-        recommendation = optimizer.recommend()
-        
-        # Extract and save results
-        best_amp1 = recommendation.kwargs["amp1_scaling_factor"]
-        best_amp2 = recommendation.kwargs["amp2_scaling_factor"]
-        
-        print(f"\nOptimization complete for detuning={detuning}, t_duration={t_duration}")
-        print(f"Best amp1: {best_amp1}, best amp2: {best_amp2}")
-        
-        results_dict = {
-            "detuning": float(detuning),
-            "t_duration": float(t_duration),
-            "best_amp1": float(best_amp1),
-            "best_amp2": float(best_amp2),
-            "best_value": float(progress.best_value),
-            "optimization_time": time.time() - progress.start_time,
-            "budget_used": budget - remaining_budget
-        }
-        
-        # Save as JSON with nice formatting
-        with open(f"nevergrad_optimized_results_{detuning}_{t_duration}.json", "w") as f:
-            json.dump(results_dict, f, indent=4)
+                    while remaining_budget > 0:
+                        # Ask for a batch of candidates
+                        candidates = []
+                        for _ in range(min(num_workers, remaining_budget)):
+                            try:
+                                candidate = optimizer.ask()
+                                candidates.append(candidate)
+                            except Exception as e:
+                                print(f"Error asking for candidate: {e}")
+                                continue
+                        
+                        if not candidates:
+                            break
+                        
+                        # Update progress with batch size
+                        progress.update(None, running_jobs=len(candidates), budget=remaining_budget)
+                        live.update(progress.create_table())
+                        
+                        # Evaluate candidates in parallel
+                        futures = [executor.submit(evaluate_candidate, c, detuning, t_duration) for c in candidates]
+                        
+                        # Process results as they complete
+                        for future in futures:
+                            try:
+                                candidate, value = future.result()
+                                optimizer.tell(candidate, value)
+                                progress.update(value, candidate.kwargs)
+                                remaining_budget -= 1
+                                live.update(progress.create_table())
+                            except Exception as e:
+                                print(f"Error processing result: {e}")
+                                continue
+                        
+                        # Update display
+                        live.update(progress.create_table())
+                        time.sleep(0.1)  # Small delay to prevent excessive updates
+            
+            # Get the recommendation
+            recommendation = optimizer.recommend()
+            
+            # Extract and save results
+            best_amp1 = recommendation.kwargs["amp1_scaling_factor"]
+            best_amp2 = recommendation.kwargs["amp2_scaling_factor"]
+            
+            print(f"\nOptimization complete for detuning={detuning}, t_duration={t_duration}")
+            print(f"Best amp1: {best_amp1}, best amp2: {best_amp2}")
+            
+            optimization_results = {
+                "detuning": float(detuning),
+                "t_duration": float(t_duration),
+                "best_amp1": float(best_amp1),
+                "best_amp2": float(best_amp2),
+                "best_value": float(progress.best_value),
+                "optimization_time": time.time() - progress.start_time,
+                "budget_used": budget - remaining_budget
+            }
+            
+            # Save as JSON with nice formatting
+            with open(f"nevergrad_optimized_results_{detuning}_{t_duration}.json", "w") as f:
+                json.dump(optimization_results, f, indent=4)
+
+if __name__ == '__main__':
+    # Set start method to 'spawn' for cross-platform compatibility
+    multiprocessing.set_start_method('spawn')
+    main()

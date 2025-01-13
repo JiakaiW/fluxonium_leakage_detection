@@ -1,0 +1,9 @@
+{
+    "detuning": 0.5,
+    "t_duration": 100.0,
+    "best_amp1": 3.657290825269117,
+    "best_amp2": 3.3436430346670214,
+    "best_value": 0.10013102506113936,
+    "optimization_time": 2181.316289663315,
+    "budget_used": 1000
+}
