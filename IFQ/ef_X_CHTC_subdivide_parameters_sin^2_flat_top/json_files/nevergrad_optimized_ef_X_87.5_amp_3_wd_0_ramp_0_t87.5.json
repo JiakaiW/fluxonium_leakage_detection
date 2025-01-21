@@ -1,0 +1,28 @@
+{
+    "regime": "amp_3_wd_0_ramp_0_t87.5",
+    "t_tot_center": 87.5,
+    "best_t_tot": 86.26658068082696,
+    "best_amp": 17.96637086191092,
+    "best_w_d": 0.0030810347632684353,
+    "best_ramp": 0.1575946714066355,
+    "best_value": 0.11584341377552518,
+    "optimization_time": 2729.759959459305,
+    "regime_bounds": {
+        "amp": {
+            "lower": 16.0,
+            "upper": 18.666666666666664
+        },
+        "w_d": {
+            "lower": 0.0028,
+            "upper": 0.00314
+        },
+        "ramp": {
+            "lower": 1e-10,
+            "upper": 0.5
+        },
+        "t_tot": {
+            "lower": 86.25,
+            "upper": 88.75
+        }
+    }
+}

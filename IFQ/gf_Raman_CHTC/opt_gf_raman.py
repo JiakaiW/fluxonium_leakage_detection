@@ -63,8 +63,8 @@ def main(detuning_idx, t_duration_idx):
     # ---------------------------------------------------------------------
     # SET UP NEVERGRAD INSTRUMENTATION
     # ---------------------------------------------------------------------
-    new_detuning_arr = np.linspace(0.1,0.4,16)
-    new_t_duration_arr = np.linspace(50,125,4)
+    new_detuning_arr = np.linspace(0.1,0.4,61)
+    new_t_duration_arr = np.linspace(50,125,11)
     new_detuning = new_detuning_arr[detuning_idx]
     new_t_duration = new_t_duration_arr[t_duration_idx]
     
@@ -72,7 +72,7 @@ def main(detuning_idx, t_duration_idx):
     old_t_duration_arr = np.array([50.0,100.0,150.0,200.0])
     
     # Use available CPU cores for parallel processing
-    num_workers = 4# multiprocessing.cpu_count()
+    num_workers = 8
     
     closest_old_detuning_idx = np.argmin(np.abs(old_detuning_arr - new_detuning))
     closest_old_t_duration_idx = np.argmin(np.abs(old_t_duration_arr - new_t_duration))
@@ -87,7 +87,7 @@ def main(detuning_idx, t_duration_idx):
         amp2_scaling_factor=ng.p.Log(init=amp2_scaling_factor, lower=amp2_scaling_factor/5, upper=amp2_scaling_factor*5),
     )
     
-    budget = 3200
+    budget = 4000
     optimizer = ng.optimizers.CMA(parametrization=parametrization,
                             budget=budget,
                             num_workers=num_workers)
