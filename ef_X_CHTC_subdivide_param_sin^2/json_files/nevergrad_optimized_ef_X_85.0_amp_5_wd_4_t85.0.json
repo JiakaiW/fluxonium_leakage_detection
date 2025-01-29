@@ -1,0 +1,23 @@
+{
+    "regime": "amp_5_wd_4_t85.0",
+    "t_tot_center": 85.0,
+    "best_t_tot": 84.88290371252218,
+    "best_amp": 21.67827120474309,
+    "best_w_d": 0.004357662352594017,
+    "best_value": 0.05209837143529618,
+    "optimization_time": 2720.456569671631,
+    "regime_bounds": {
+        "amp": {
+            "lower": 21.333333333333332,
+            "upper": 24.0
+        },
+        "w_d": {
+            "lower": 0.00416,
+            "upper": 0.0045
+        },
+        "t_tot": {
+            "lower": 83.75,
+            "upper": 86.25
+        }
+    }
+}
