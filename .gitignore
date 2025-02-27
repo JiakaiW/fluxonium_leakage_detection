@@ -5,3 +5,11 @@ _pycache_/
 *.err
 Miniconda3-latest-Linux-x86_64.sh
 *.pkl
+*.png
+*.mp4
+*.gif
+*.jpg
+*.jpeg
+*.webp
+*.heic
+*.heif
